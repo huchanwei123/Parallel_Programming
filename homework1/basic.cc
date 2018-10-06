@@ -15,6 +15,8 @@ using namespace std;
 // function initialization
 float *Binary2Float(char *filename, int id, int local_size, int num_per_processor);
 void swap(float *a, float *b);
+void tail_send2head(int cur_id, int local_size, float *local_data, MPI_Status status, MPI_Comm mpi_comm);
+void head_recv_from_tail(int cur_id, float *local_data, MPI_Status status, MPI_Comm mpi_comm);
 
 int main(int argc, char *argv[]){
     // initialization for parameters
@@ -25,6 +27,7 @@ int main(int argc, char *argv[]){
     // initialize for MPI parameters
     int id, size;
     MPI_Status status;
+    MPI_Comm mpi_comm = MPI_COMM_WORLD;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -46,7 +49,6 @@ int main(int argc, char *argv[]){
     local_data = Binary2Float(argv[2], id, num_per_processor, local_size);
 
     // print out some information
-    
     cout << "[" << id<< "] Before search: ";
     for(int i; i<local_size; i++){
         cout << *(local_data+i) << endl;
@@ -55,52 +57,29 @@ int main(int argc, char *argv[]){
 
     // Start strictly odd-even sort
     int local_done, total_done;
-    while(!total_done){
-
+    float after_swap_tail;
+    //while(!total_done){
+    int phase = 1;
         if(phase == 1){
             if(local_size % 2 == 0){
                 // local sort first
-                for(int i=1; i<local_size; i+=2){
+                for(int i=1; i<local_size-1; i+=2){
                     if(local_data[i] > local_data[i+1])
                         swap(&local_data[i], &local_data[i+1]);
                 }
                 // send and compare head and tail
-                
+                if(id != size-1){
+                    tail_send2head(id, local_size, local_data, status, mpi_comm);
+                }else if(id != 0){
+                    head_recv_from_tail(id, local_data, status, mpi_comm);
+                }
+                else;
             }
     
         }   
-        else{
+        else;
     
-        }
-    }
-    
-    
-    // test for compare tail and head between two processors
-    /*
-    float *tail;
-    float after_swap_tail;
-    if(id == 1){
-        // get the tail data of current processor
-        tail = &local_data[local_size-1];
-        cout << "Address of tail is: " << tail << endl;
-        MPI_Send(tail, sizeof(float), MPI_DOUBLE_PRECISION, id+1, 1, MPI_COMM_WORLD);
-        MPI_Recv(&after_swap_tail, sizeof(float), MPI_DOUBLE_PRECISION, id+1, 1, MPI_COMM_WORLD, &status);
-        if(after_swap_tail == local_data[local_size-1])
-            cout << "No swap" << endl;
-        else
-            compare_and_swap(&local_data[local_size-1], &after_swap_tail);
-
-    }else if(id == 2){
-        // get head data of current processor
-        float recv_tail;
-        MPI_Recv(&recv_tail, sizeof(float), MPI_DOUBLE_PRECISION, id-1, 1, MPI_COMM_WORLD, &status);
-        compare_and_swap(&recv_tail, local_data);
-        MPI_Send(&recv_tail, sizeof(float), MPI_DOUBLE_PRECISION, id-1, 1, MPI_COMM_WORLD);
-    }
-    else;
-    */
     // print out some information
-    
     cout << "[" << id<< "] After search: ";
     for(int i; i<local_size; i++){
         cout << *(local_data+i) << endl;
@@ -142,8 +121,34 @@ float *Binary2Float(char *filename, int id, int local_size, int num_per_processo
     return out;
 }
 
-bool TAIL2HEAD(int cur_id, ){
-    
+void tail_send2head(int cur_id, int local_size, float *local_data, MPI_Status status, MPI_Comm mpi_comm){
+    float *tail;
+    float after_swap_tail;
+    // get the tail data of current processor
+    tail = &local_data[local_size-1];
+    MPI_Send(tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id+1, 1, mpi_comm);
+    cout << "ID " << cur_id << " sent to ID " << cur_id+1 << " with data " << *tail << endl;
+    MPI_Recv(&after_swap_tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id+1, 1, mpi_comm, &status);
+    cout << "ID " << cur_id << " received from ID " << cur_id+1 << " with data " << after_swap_tail << endl;
+    if(after_swap_tail == local_data[local_size-1])
+        cout << "No swap" << endl;
+    else
+        swap(&local_data[local_size-1], &after_swap_tail);
+        cout << "swap done!" << endl;
+    cout << "Address of local data for ID " << cur_id << " is " << local_data << endl;
+    return;
+}
+
+void head_recv_from_tail(int cur_id, float *local_data, MPI_Status status, MPI_Comm mpi_comm){
+    // get head data of current processor
+    float recv_tail;
+    MPI_Recv(&recv_tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id-1, 1, mpi_comm, &status);
+    cout << "ID " << cur_id << " received from ID " << cur_id-1 << " with data " << recv_tail << endl;
+    swap(&recv_tail, local_data);
+    MPI_Send(&recv_tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id-1, 1, mpi_comm);
+    cout << "ID " << cur_id << " sent to ID " << cur_id-1 << " with data " << recv_tail << endl;
+    cout << "Address of local data for ID " << cur_id << " is " << local_data << endl;
+    return;
 }
 
 void swap(float *a, float *b){
