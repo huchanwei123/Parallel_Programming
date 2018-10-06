@@ -13,7 +13,7 @@
 using namespace std;
 
 // function initialization
-float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count);
+float *Binary2Float(char *filename, int id, int local_size, int num_per_processor);
 void swap(float *a, float *b);
 void tail_send2head(int cur_id, int local_size, float *local_data, MPI_Status status, MPI_Comm mpi_comm);
 void head_recv_from_tail(int cur_id, float *local_data, MPI_Status status, MPI_Comm mpi_comm);
@@ -26,7 +26,7 @@ int main(int argc, char *argv[]){
     
     // initialize for MPI parameters
     int id, size;
-    MPI_File file_in;
+    MPI_File fh;
     MPI_Status status;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
 
@@ -37,24 +37,25 @@ int main(int argc, char *argv[]){
     // scatter the data to each processor
     int num_per_processor = N/size;
     int local_size;
-    int offset = sizeof(float)*id*num_per_processor;
     int head_idx = id*num_per_processor;
     float *local_data = new float(num_per_processor);
     
-    // load in data using MPI IO
+    // load data
     if(id == size-1){
         local_size = num_per_processor + (N%size);
     }else{
         local_size = num_per_processor;
     }
-    local_data = MPI_Read(mpi_comm, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, file_in, offset, local_size);
-    
+        
+    local_data = Binary2Float(argv[2], id, num_per_processor, local_size);
+
     // print out some information
     cout << "[" << id<< "] Before search: ";
     for(int i; i<local_size; i++){
         cout << *(local_data+i) << endl;
     }
     
+
     // Start strictly odd-even sort
     int local_done, total_done;
     float after_swap_tail;
@@ -90,19 +91,35 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
-float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count){
-    // Open file using MPI API
-    int rc;
-    float *local_data = new float(count);
-    rc = MPI_File_open(comm, filename, amode, info_, &fh);
-    if(rc != MPI_SUCCESS)
-        throw string("[Error] input read in FAILED");
-    
-    // Read at certain offset
-    MPI_File_read_at(fh, offset, local_data, count, MPI_INT, MPI_STATUS_IGNORE);
-    MPI_File_close(&fh);
+float *Binary2Float(char *filename, int id, int local_size, int num_per_processor){
+    ifstream inFile;
+    ifstream::pos_type size;
 
-    return local_data;
+    // open the binary file
+    inFile.open(filename, ios::binary);
+
+    // set the pointer position to the end of file
+    inFile.seekg(0, ios::end);
+    size = inFile.tellg();
+    
+    // set the pointer position to the offset
+    int offset;
+    offset = sizeof(float)*id*num_per_processor;
+    inFile.seekg(offset, ios::beg);
+    
+    // allocate memory for the array
+    float *out = new float(local_size);
+    for(int i=0; i<local_size; i++){
+        inFile.read(reinterpret_cast<char*>(&out[i]), sizeof(float));
+    }
+    
+    // check if read in successfully
+    if (inFile);
+        //cout << "[Info] ID:" << id << " Successfully read in..." << endl;
+    else
+        throw string("[Error] input read in FAILED");
+
+    return out;
 }
 
 void tail_send2head(int cur_id, int local_size, float *local_data, MPI_Status status, MPI_Comm mpi_comm){
