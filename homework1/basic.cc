@@ -10,6 +10,10 @@
 #include <string>
 #include "mpi.h"
 
+#define is_odd(in)  (in%2)
+#define is_even(in) (!is_odd(in))
+#define convert(in) ((in+1)%2)
+
 using namespace std;
 
 // function initialization
@@ -62,52 +66,39 @@ int main(int argc, char *argv[]){
     int phase = 0;
     while(!all_done){
         done = 1;
+
+        // for local sort
+        if(is_odd(num_per_processor) && is_odd(id))
+            done = local_sort(convert(phase), local_size, local_data);
+        else
+            done = local_sort(phase, local_size, local_data);
+
         if(phase == 1){
             // in odd phase now
-	    if(local_size % 2 == 0 && num_per_processor % 2 == 1)
-		done = local_sort(0, local_size, local_data);
-	    else if(local_size % 2 == 0){
-                // local sort first
-                done = local_sort(1, local_size, local_data);
+            // for cross processor communication
+	        if(is_even(num_per_processor)){
                 // send and compare head and tail
                 if(id != size-1)
                     done = tail_send2head(id, local_size, local_data, done, mpi_comm);
                 if(id != 0)
                     done = head_recv_from_tail(id, local_data, done, mpi_comm);
-            }else{    
-		if(id == 0)
-		    done = local_sort(1, local_size, local_data);
-		if(id == size-1)
-		    done = local_sort(0, local_size, local_data);
-
+            }else{
                 // send and compare cross processor
-                if(id % 2 == 1 && id != size-1){
-                    done = local_sort(0, local_size, local_data);
+                if(is_odd(id) && id != size-1){
                     done = tail_send2head(id, local_size, local_data, done, mpi_comm);
                 }
-                if(id % 2 == 0 && id != 0){
-                    done = local_sort(1, local_size, local_data);
+                if(is_even(id) && id != 0){
                     done = head_recv_from_tail(id, local_data, done, mpi_comm);
                 }
             }
-        }   
-        else if(phase == 0){
-            // in even phase now
-	    if(local_size % 2 == 0 && num_per_processor % 2 == 1){
-	    	// do local sort first
-		done = local_sort(1, local_size, local_data);
-		done = head_recv_from_tail(id, local_data, done, mpi_comm);
-	    }else if(local_size % 2 == 0){
-                // do local sort only
-                done = local_sort(0, local_size, local_data);
-            }else{
+        }else if(phase == 0){
+            // for cross processor communication
+	        if(is_odd(num_per_processor)){
                 // send and compare cross processor
-                if(id % 2 == 0 && id != size-1){
-                    done = local_sort(0, local_size, local_data);
+                if(is_even(id) && id != size-1){
                     done = tail_send2head(id, local_size, local_data, done, mpi_comm);
                 }
-                if(id % 2 == 1){
-                    done = local_sort(1, local_size, local_data);
+                if(is_odd(id)){
                     done = head_recv_from_tail(id, local_data, done, mpi_comm);
                 }
             }
