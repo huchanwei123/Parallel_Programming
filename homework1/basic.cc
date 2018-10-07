@@ -14,23 +14,30 @@ using namespace std;
 
 // function initialization
 float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count);
+void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, float *local_data, int offset, int count);
 void swap(float *a, float *b);
-void tail_send2head(int cur_id, int local_size, float *local_data, MPI_Status status, MPI_Comm mpi_comm);
-void head_recv_from_tail(int cur_id, float *local_data, MPI_Status status, MPI_Comm mpi_comm);
+bool local_sort(int start_idx, int local_size, float *local_data);
+bool tail_send2head(int cur_id, int local_size, float *local_data, bool local_done, MPI_Comm mpi_comm);
+bool head_recv_from_tail(int cur_id, float *local_data, bool local_done, MPI_Comm mpi_comm);
 
 int main(int argc, char *argv[]){
     // initialization for parameters
     string in_str(argv[1]);
     int N = stoi(in_str);
-    //list = Binary2Float(argv[1]);
     
     // initialize for MPI parameters
-    int id, size;
-    MPI_File file_in;
+    int id, size, rc;
+    MPI_File file_in, file_out;
     MPI_Status status;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
 
-    MPI_Init(&argc, &argv);
+    // Initial MPI environment
+    rc = MPI_Init(&argc, &argv);
+    if(rc != MPI_SUCCESS){
+        throw string("Error starting MPI program. Terminating\n");
+        MPI_Abort(mpi_comm, rc);
+    }
+
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
@@ -40,7 +47,7 @@ int main(int argc, char *argv[]){
     int offset = sizeof(float)*id*num_per_processor;
     int head_idx = id*num_per_processor;
     float *local_data = new float(num_per_processor);
-    
+
     // load in data using MPI IO
     if(id == size-1){
         local_size = num_per_processor + (N%size);
@@ -49,45 +56,92 @@ int main(int argc, char *argv[]){
     }
     local_data = MPI_Read(mpi_comm, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, file_in, offset, local_size);
     
-    // print out some information
-    cout << "[" << id<< "] Before search: ";
-    for(int i; i<local_size; i++){
-        cout << *(local_data+i) << endl;
-    }
-    
     // Start strictly odd-even sort
-    int local_done, total_done;
-    float after_swap_tail;
-    //while(!total_done){
-    int phase = 1;
+    int done = 0;
+    int all_done = 0;
+    int phase = 0;
+    while(!all_done){
+        done = 1;
         if(phase == 1){
+            // in odd phase now
             if(local_size % 2 == 0){
                 // local sort first
-                for(int i=1; i<local_size-1; i+=2){
-                    if(local_data[i] > local_data[i+1])
-                        swap(&local_data[i], &local_data[i+1]);
-                }
+                done = local_sort(1, local_size, local_data);
                 // send and compare head and tail
-                if(id != size-1){
-                    tail_send2head(id, local_size, local_data, status, mpi_comm);
-                }else if(id != 0){
-                    head_recv_from_tail(id, local_data, status, mpi_comm);
+                if(id != size-1)
+                    done = tail_send2head(id, local_size, local_data, done, mpi_comm);
+                if(id != 0)
+                    done = head_recv_from_tail(id, local_data, done, mpi_comm);
+            }else{    
+                // send and compare cross processor
+                if(id % 2 == 1 && id != size-1){
+                    done = local_sort(0, local_size, local_data);
+                    done = tail_send2head(id, local_size, local_data, done, mpi_comm);
                 }
-                else;
+                if(id % 2 == 0 && id != 0){
+                    done = local_sort(1, local_size, local_data);
+                    done = head_recv_from_tail(id, local_data, done, mpi_comm);
+                }
             }
-    
         }   
+        else if(phase == 0){
+            // in even phase now
+            if(local_size % 2 == 0){
+                // do local sort only
+                done = local_sort(0, local_size, local_data);
+            }else{
+                // send and compare cross processor
+                if(id % 2 == 0 && id != size-1){
+                    done = local_sort(1, local_size, local_data);
+                    done = tail_send2head(id, local_size, local_data, done, mpi_comm);
+                }
+                if(id % 2 == 1){
+                    done = local_sort(0, local_size, local_data);
+                    done = head_recv_from_tail(id, local_data, done, mpi_comm);
+                }
+            }
+        }
         else;
+        
+        // change phase
+        phase = ((phase == 1)? 0 : 1);
     
+        // wait all processes done
+        MPI_Barrier(mpi_comm);
+        MPI_Allreduce(&done, &all_done, 1, MPI_INT, MPI_LAND, mpi_comm);
+    }
     // print out some information
+    /*
     cout << "[" << id<< "] After search: ";
     for(int i; i<local_size; i++){
         cout << *(local_data+i) << endl;
     }
-    
+    */
+
+    // write the result
+    MPI_Write(mpi_comm, argv[3], MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, file_out, local_data, offset, local_size);
+
+    // free the data
+    delete [] local_data;
+
+    MPI_Barrier(mpi_comm);    
     MPI_Finalize();
 
     return 0;
+}
+
+void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, float *local_data, int offset, int count){
+    // Open file using MPI API
+    int rc;
+    rc = MPI_File_open(comm, filename, amode, info_, &fh);
+    if(rc != MPI_SUCCESS)
+        throw string("[Error] output create FAILED");
+    
+    // Read at certain offset
+    MPI_File_write_at(fh, offset, local_data, count, MPI_INT, MPI_STATUS_IGNORE);
+    MPI_File_close(&fh);
+
+    return;
 }
 
 float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count){
@@ -105,34 +159,46 @@ float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_Fi
     return local_data;
 }
 
-void tail_send2head(int cur_id, int local_size, float *local_data, MPI_Status status, MPI_Comm mpi_comm){
+bool tail_send2head(int cur_id, int local_size, float *local_data, bool local_done, MPI_Comm mpi_comm){
     float *tail;
     float after_swap_tail;
     // get the tail data of current processor
     tail = &local_data[local_size-1];
-    MPI_Send(tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id+1, 1, mpi_comm);
-    cout << "ID " << cur_id << " sent to ID " << cur_id+1 << " with data " << *tail << endl;
-    MPI_Recv(&after_swap_tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id+1, 1, mpi_comm, &status);
-    cout << "ID " << cur_id << " received from ID " << cur_id+1 << " with data " << after_swap_tail << endl;
-    if(after_swap_tail == local_data[local_size-1])
-        cout << "No swap" << endl;
-    else
+    MPI_Send(tail, 1, MPI_REAL, cur_id+1, 1, mpi_comm);
+    MPI_Recv(&after_swap_tail, 1, MPI_REAL, cur_id+1, 1, mpi_comm, MPI_STATUS_IGNORE);
+    if(after_swap_tail != local_data[local_size-1]){
         swap(&local_data[local_size-1], &after_swap_tail);
-        cout << "swap done!" << endl;
-    cout << "Address of local data for ID " << cur_id << " is " << local_data << endl;
-    return;
+        local_done = false;
+    }else
+        local_done = true;
+
+    return local_done;
 }
 
-void head_recv_from_tail(int cur_id, float *local_data, MPI_Status status, MPI_Comm mpi_comm){
+bool head_recv_from_tail(int cur_id, float *local_data, bool local_done, MPI_Comm mpi_comm){
     // get head data of current processor
     float recv_tail;
-    MPI_Recv(&recv_tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id-1, 1, mpi_comm, &status);
-    cout << "ID " << cur_id << " received from ID " << cur_id-1 << " with data " << recv_tail << endl;
-    swap(&recv_tail, local_data);
-    MPI_Send(&recv_tail, sizeof(float), MPI_DOUBLE_PRECISION, cur_id-1, 1, mpi_comm);
-    cout << "ID " << cur_id << " sent to ID " << cur_id-1 << " with data " << recv_tail << endl;
-    cout << "Address of local data for ID " << cur_id << " is " << local_data << endl;
-    return;
+    MPI_Recv(&recv_tail, 1, MPI_REAL, cur_id-1, 1, mpi_comm, MPI_STATUS_IGNORE);
+    if(recv_tail > *local_data){
+        swap(&recv_tail, local_data);
+        local_done = false;
+    }else
+        local_done = true;
+    MPI_Send(&recv_tail, 1, MPI_REAL, cur_id-1, 1, mpi_comm);
+    
+    return local_done;
+}
+
+bool local_sort(int start_idx, int local_size, float *local_data){
+    bool local_done;
+    for(int i=start_idx; i<local_size-1; i+=2){
+        if(local_data[i] > local_data[i+1]){
+            swap(&local_data[i], &local_data[i+1]);
+            local_done = false;
+        }else
+            local_done = true;
+    }
+    return local_done;
 }
 
 void swap(float *a, float *b){
