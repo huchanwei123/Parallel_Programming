@@ -42,7 +42,6 @@ int main(int argc, char *argv[]){
     // Initial MPI environment
     rc = MPI_Init(&argc, &argv);
     if(rc != MPI_SUCCESS){
-        //throw string("Error starting MPI program. Terminating\n");
         printf("Error starting MPI program. Terminating\n");
         MPI_Abort(mpi_comm, rc);
     }
@@ -133,7 +132,6 @@ void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_Fil
     int rc;
     rc = MPI_File_open(comm, filename, amode, info_, &fh);
     if(rc != MPI_SUCCESS){
-        //throw string("[Error] output create FAILED");
         printf("[Error] output create FAILED");
         MPI_Abort(comm, rc);
     }
@@ -150,7 +148,6 @@ float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_Fi
     float *local_data = malloc(count * sizeof(float));
     rc = MPI_File_open(comm, filename, amode, info_, &fh);
     if(rc != MPI_SUCCESS){
-        //throw string("[Error] input read in FAILED");
         printf("[Error] input read in FAILED");
         MPI_Abort(comm, rc);
     }
