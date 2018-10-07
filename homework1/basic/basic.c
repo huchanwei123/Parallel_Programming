@@ -4,10 +4,6 @@
 // Author:                                               *
 //  Chan-Wei Hu                                          *
 /*********************************************************/
-//#include <iostream>
-//#include <fstream>
-//#include <cstring>
-//#include <string>
 #include <stdio.h>
 #include <stdlib.h>
 #include "mpi.h"
@@ -38,7 +34,7 @@ int main(int argc, char *argv[]){
     MPI_File file_in, file_out;
     MPI_Status status;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
-
+    MPI_Group old_group;
     // Initial MPI environment
     rc = MPI_Init(&argc, &argv);
     if(rc != MPI_SUCCESS){
@@ -48,6 +44,26 @@ int main(int argc, char *argv[]){
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
+
+    // if the number of process is larger than N...
+    if(N < size){
+    	// obtain the group of processes in the world comm.
+	MPI_Comm_group(mpi_comm, &old_group);
+
+	// Remove unnecessary processes
+	MPI_Group new_group;
+	int ranges[][3] = {{N, size-1, 1}};
+	MPI_Group_range_excl(old_group, 1, ranges, &new_group);
+
+	// Create new comm.
+	MPI_Comm_create(mpi_comm, new_group, &mpi_comm);
+
+	if(mpi_comm == MPI_COMM_NULL){
+	    MPI_Finalize();
+	    exit(0);
+	}
+	size = N;
+    }
 
     // scatter the data to each processor
     int num_per_processor = N/size;
