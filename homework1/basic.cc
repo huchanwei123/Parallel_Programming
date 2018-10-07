@@ -64,7 +64,9 @@ int main(int argc, char *argv[]){
         done = 1;
         if(phase == 1){
             // in odd phase now
-            if(local_size % 2 == 0){
+	    if(local_size % 2 == 0 && num_per_processor % 2 == 1)
+		done = local_sort(0, local_size, local_data);
+	    else if(local_size % 2 == 0){
                 // local sort first
                 done = local_sort(1, local_size, local_data);
                 // send and compare head and tail
@@ -73,6 +75,11 @@ int main(int argc, char *argv[]){
                 if(id != 0)
                     done = head_recv_from_tail(id, local_data, done, mpi_comm);
             }else{    
+		if(id == 0)
+		    done = local_sort(1, local_size, local_data);
+		if(id == size-1)
+		    done = local_sort(0, local_size, local_data);
+
                 // send and compare cross processor
                 if(id % 2 == 1 && id != size-1){
                     done = local_sort(0, local_size, local_data);
@@ -86,17 +93,21 @@ int main(int argc, char *argv[]){
         }   
         else if(phase == 0){
             // in even phase now
-            if(local_size % 2 == 0){
+	    if(local_size % 2 == 0 && num_per_processor % 2 == 1){
+	    	// do local sort first
+		done = local_sort(1, local_size, local_data);
+		done = head_recv_from_tail(id, local_data, done, mpi_comm);
+	    }else if(local_size % 2 == 0){
                 // do local sort only
                 done = local_sort(0, local_size, local_data);
             }else{
                 // send and compare cross processor
                 if(id % 2 == 0 && id != size-1){
-                    done = local_sort(1, local_size, local_data);
+                    done = local_sort(0, local_size, local_data);
                     done = tail_send2head(id, local_size, local_data, done, mpi_comm);
                 }
                 if(id % 2 == 1){
-                    done = local_sort(0, local_size, local_data);
+                    done = local_sort(1, local_size, local_data);
                     done = head_recv_from_tail(id, local_data, done, mpi_comm);
                 }
             }
@@ -110,13 +121,6 @@ int main(int argc, char *argv[]){
         MPI_Barrier(mpi_comm);
         MPI_Allreduce(&done, &all_done, 1, MPI_INT, MPI_LAND, mpi_comm);
     }
-    // print out some information
-    /*
-    cout << "[" << id<< "] After search: ";
-    for(int i; i<local_size; i++){
-        cout << *(local_data+i) << endl;
-    }
-    */
 
     // write the result
     MPI_Write(mpi_comm, argv[3], MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, file_out, local_data, offset, local_size);
