@@ -14,8 +14,6 @@
 #define is_even(in) (!is_odd(in))
 #define convert(in) ((in+1)%2)
 
-//using namespace std;
-
 // function initialization
 float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count);
 void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, float *local_data, int offset, int count);
@@ -26,7 +24,6 @@ int head_recv_from_tail(int cur_id, float *local_data, int local_done, MPI_Comm 
 
 int main(int argc, char *argv[]){
     // initialization for parameters
-    //string in_str(argv[1]);
     const int N = atoi(argv[1]);
     
     // initialize for MPI parameters
@@ -81,9 +78,10 @@ int main(int argc, char *argv[]){
     
     // Start strictly odd-even sort
     int done = 0;
-    int all_done = 0;
+    int even_done = 0;
+    int odd_done = 0;
     int phase = 0;
-    while(!all_done){
+    while(!even_done || !odd_done){
         done = 1;
         // for local sort
         if(is_odd(num_per_processor) && is_odd(id))
@@ -122,13 +120,15 @@ int main(int argc, char *argv[]){
             }
         }
         else;
-        
         // change phase
         phase = ((phase == ODD_PHASE)? EVEN_PHASE : ODD_PHASE);
-    
+
         // wait all processes done
         MPI_Barrier(mpi_comm);
-        MPI_Allreduce(&done, &all_done, 1, MPI_INT, MPI_LAND, mpi_comm);
+        if(phase == ODD_PHASE)
+            MPI_Allreduce(&done, &even_done, 1, MPI_INT, MPI_LAND, mpi_comm);
+        else
+            MPI_Allreduce(&done, &odd_done, 1, MPI_INT, MPI_LAND, mpi_comm);
     }
 
     // write the result
