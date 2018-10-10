@@ -13,12 +13,6 @@
 #include <stdlib.h>
 #include "mpi.h"
 
-#define ODD_PHASE   1
-#define EVEN_PHASE  0
-#define is_odd(in)  (in%2)
-#define is_even(in) (!is_odd(in))
-#define convert(in) ((in+1)%2)
-
 // function initialization
 float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count);
 void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, float *local_data, int offset, int count);
@@ -26,7 +20,6 @@ int comparator(const void *a, const void *b);
 void Merge(int size_a, int size_b, float *data_a, float *data_b);
 void Send_data(int target_id, int local_size, float *local_data, MPI_Comm mpi_comm);
 void Recv_data(int from_id, int recv_size, float *recv_data, MPI_Comm mpi_comm);
-void print_info(int size, float *data);
 
 int main(int argc, char *argv[]){
     // initialization for parameters
@@ -84,32 +77,20 @@ int main(int argc, char *argv[]){
     local_data = MPI_Read(mpi_comm, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, file_in, offset, local_size);
     
     // Start processor level odd-even sort
-    int phase = 0;
-
     // perform local sort first
     qsort(local_data, local_size, sizeof(float), comparator);
 
     // First, partner processor will communicate with each other of their size
-    int left_size = 0;
     int right_size = 0;
-    int i=0;
-
-    if(id != 0){
-        MPI_Send(&local_size, 1, MPI_INT, id-1, 2, mpi_comm);
-        MPI_Recv(&left_size, 1, MPI_INT, id-1, 2, mpi_comm, MPI_STATUS_IGNORE);
-    }
-
-    if(id != size-1){
+    if(id != 0)
+	MPI_Send(&local_size, 1, MPI_INT, id-1, 2, mpi_comm);
+    if(id != size-1)
         MPI_Recv(&right_size, 1, MPI_INT, id+1, 2, mpi_comm, MPI_STATUS_IGNORE);
-        MPI_Send(&local_size, 1, MPI_INT, id+1, 2, mpi_comm);
-    }
-
     
+    // start merge sort
     float *my_temp = malloc(right_size * sizeof(float));
-    float *out = malloc((right_size+local_size) * sizeof(float));
-    
-    // start sorting
-    for(phase=0; phase<size; phase++){
+    int phase = 0;
+    for(phase=0; phase<=size; phase++){
         if((id+phase)%2 == 0 && id != size-1){
             Recv_data(id+1, right_size, my_temp, mpi_comm);
             Merge(local_size, right_size, local_data, my_temp);
@@ -121,23 +102,15 @@ int main(int argc, char *argv[]){
         }
         MPI_Barrier(mpi_comm);
     }
-    
-    // print sorted result
-    /* 
-    printf("I'm ID [%d]\n", id);
-    for(i = 0; i<local_size; i++){
-        printf("%f\n", local_data[i]);
-    }
-    */
+
     // write the result
     MPI_Write(mpi_comm, argv[3], MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, file_out, local_data, offset, local_size);
     
     // free the data
     free(local_data);
     free(my_temp);
-    free(out);
-    
-    //MPI_Barrier(mpi_comm);   
+   
+    // Finalize MPI program
     MPI_Finalize();
 
     return 0;
@@ -187,8 +160,12 @@ void Recv_data(int from_id, int recv_size, float *recv_data, MPI_Comm mpi_comm){
 }
 
 int comparator(const void *a, const void *b){
-    // need to change to the other
-    return (*(float *)a - *(float *)b);
+    // compare function for qsort()
+    // Note that if we simply return the substraction of these two value, 
+    // the return value may overflow!!! (From Stack overflow XD).
+    // So the better way is to compare it first and return the value
+    // If *(float *)a > *(float *)b, then it returns 1, else return -1.
+    return (*(float *)a > *(float *)b) - (*(float *)a < *(float *)b);
 }
 
 void Merge(int size_a, int size_b, float *data_a, float *data_b){    
@@ -200,9 +177,9 @@ void Merge(int size_a, int size_b, float *data_a, float *data_b){
         if(data_a[idx_a] < data_b[idx_b])
             tmp[idx_out++] = data_a[idx_a++];
         else
-            tmp[idx_out++] = data_b[idx_b++];
+	    tmp[idx_out++] = data_b[idx_b++];
     }
-
+	
     while(idx_a < size_a)
         tmp[idx_out++] = data_a[idx_a++];
 
@@ -214,7 +191,7 @@ void Merge(int size_a, int size_b, float *data_a, float *data_b){
         data_a[i] = tmp[i];
     for(i = 0; i < size_b; i++)
         data_b[i] = tmp[size_a+i];
-
+	
     // free memory
     free(tmp);
 }
