@@ -23,9 +23,10 @@
 float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count);
 void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, float *local_data, int offset, int count);
 int comparator(const void *a, const void *b);
-void Merge(int size_a, int size_b, float *data_a, float *data_b, float *out);
+void Merge(int size_a, int size_b, float *data_a, float *data_b);
 void Send_data(int target_id, int local_size, float *local_data, MPI_Comm mpi_comm);
 void Recv_data(int from_id, int recv_size, float *recv_data, MPI_Comm mpi_comm);
+void print_info(int size, float *data);
 
 int main(int argc, char *argv[]){
     // initialization for parameters
@@ -91,7 +92,8 @@ int main(int argc, char *argv[]){
     // First, partner processor will communicate with each other of their size
     int left_size = 0;
     int right_size = 0;
-    
+    int i=0;
+
     if(id != 0){
         MPI_Send(&local_size, 1, MPI_INT, id-1, 2, mpi_comm);
         MPI_Recv(&left_size, 1, MPI_INT, id-1, 2, mpi_comm, MPI_STATUS_IGNORE);
@@ -105,50 +107,31 @@ int main(int argc, char *argv[]){
     
     float *my_temp = malloc(right_size * sizeof(float));
     float *out = malloc((right_size+local_size) * sizeof(float));
+    
     // start sorting
-    int i = 0;
     for(phase=0; phase<size; phase++){
-        if(is_even(phase)){
-            // in even phase
-            if(is_even(id) && id != size-1){
-                // I'm even id in even phase, so I have a id+1 partner
-                Recv_data(id+1, right_size, my_temp, mpi_comm);
-                Merge(local_size, right_size, local_data, my_temp, out);
-                for(i=0; i<local_size; i++) local_data[i] = out[i];
-                Send_data(id+1, right_size, &out[local_size], mpi_comm);
-            }else{
-                // I'm odd id in even phase
-                Send_data(id-1, local_size, local_data, mpi_comm);
-                Recv_data(id-1, local_size, local_data, mpi_comm);
-            }            
+        if((id+phase)%2 == 0 && id != size-1){
+            Recv_data(id+1, right_size, my_temp, mpi_comm);
+            Merge(local_size, right_size, local_data, my_temp);
+            Send_data(id+1, right_size, my_temp, mpi_comm);
+        } 
+        if((id+phase)%2 == 1 && id != 0){
+            Send_data(id-1, local_size, local_data, mpi_comm);
+            Recv_data(id-1, local_size, local_data, mpi_comm);
         }
-        else
-            // in odd phase
-            if(is_odd(id) && id != size-1){
-                // I'm odd id in odd phase, so I have a id+1 partner
-                Recv_data(id+1, right_size, my_temp, mpi_comm);
-                Merge(local_size, right_size, local_data, my_temp, out);
-                for(i=0; i<local_size; i++) local_data[i] = out[i];
-                Send_data(id+1, right_size, &out[local_size], mpi_comm);
-            }else if(is_even(id) && id != 0){
-                // I'm even id in even phase
-                Send_data(id-1, local_size, local_data, mpi_comm);
-                Recv_data(id-1, local_size, local_data, mpi_comm);
-            }else;
         MPI_Barrier(mpi_comm);
     }
     
     // print sorted result
+    /* 
     printf("I'm ID [%d]\n", id);
     for(i = 0; i<local_size; i++){
         printf("%f\n", local_data[i]);
     }
-
-
-    
+    */
     // write the result
     MPI_Write(mpi_comm, argv[3], MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, file_out, local_data, offset, local_size);
-
+    
     // free the data
     free(local_data);
     free(my_temp);
@@ -208,25 +191,30 @@ int comparator(const void *a, const void *b){
     return (*(float *)a - *(float *)b);
 }
 
-void Merge(int size_a, int size_b, float *data_a, float *data_b, float *out){
-    // Merge the list with lower order to out
-    int idx_a = 0, idx_b = 0, idx_out = 0;
-    int total_size = size_a+size_b;
-    while(idx_out < total_size && idx_a < size_a && idx_b < size_b){
+void Merge(int size_a, int size_b, float *data_a, float *data_b){    
+    float *tmp = malloc(sizeof(float)*(size_a+size_b));
+    // Merge the list with lower order to tmp
+    int idx_a = 0, idx_b = 0, idx_out = 0, i = 0;
+   
+    while(idx_a < size_a && idx_b < size_b){
         if(data_a[idx_a] < data_b[idx_b])
-            out[idx_out++] = data_a[idx_a++];
+            tmp[idx_out++] = data_a[idx_a++];
         else
-            out[idx_out++] = data_b[idx_b++];
+            tmp[idx_out++] = data_b[idx_b++];
     }
-    if(idx_out != total_size-1){
-        if(idx_a == size_a-1){
-            while(idx_out<total_size){
-                out[idx_out++] = data_b[idx_b++];
-            } 
-        }else{
-            while(idx_out<total_size){
-                out[idx_out++] = data_a[idx_a++];
-            } 
-        }
-    }
+
+    while(idx_a < size_a)
+        tmp[idx_out++] = data_a[idx_a++];
+
+    while(idx_b < size_b)
+        tmp[idx_out++] = data_b[idx_b++];
+
+    // split the data
+    for(i = 0; i < size_a; i++)
+        data_a[i] = tmp[i];
+    for(i = 0; i < size_b; i++)
+        data_b[i] = tmp[size_a+i];
+
+    // free memory
+    free(tmp);
 }
