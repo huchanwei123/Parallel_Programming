@@ -17,6 +17,8 @@
 float *MPI_Read(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, int offset, int count);
 void MPI_Write(MPI_Comm comm, char *filename, int amode, MPI_Info info_, MPI_File fh, float *local_data, int offset, int count);
 int comparator(const void *a, const void *b);
+void keep_high(int size_a, int size_b, float *data_a, float *data_b);
+void keep_low(int size_a, int size_b, float *data_a, float *data_b);
 void Merge(int size_a, int size_b, float *data_a, float *data_b);
 void Send_data(int target_id, int local_size, float *local_data, MPI_Comm mpi_comm);
 void Recv_data(int from_id, int recv_size, float *recv_data, MPI_Comm mpi_comm);
@@ -81,24 +83,31 @@ int main(int argc, char *argv[]){
     qsort(local_data, local_size, sizeof(float), comparator);
 
     // First, partner processor will communicate with each other of their size
-    int right_size = 0;
-    if(id != 0)
-	MPI_Send(&local_size, 1, MPI_INT, id-1, 2, mpi_comm);
-    if(id != size-1)
+    int right_size = 0, left_size = 0;
+    if(id != 0){
+	    MPI_Send(&local_size, 1, MPI_INT, id-1, 2, mpi_comm);
+        MPI_Recv(&left_size, 1, MPI_INT, id-1, 3, mpi_comm, MPI_STATUS_IGNORE);
+    }
+    if(id != size-1){
         MPI_Recv(&right_size, 1, MPI_INT, id+1, 2, mpi_comm, MPI_STATUS_IGNORE);
-    
+        MPI_Send(&local_size, 1, MPI_INT, id+1, 3, mpi_comm);
+    }
     // start merge sort
-    float *my_temp = malloc(right_size * sizeof(float));
     int phase = 0;
     for(phase=0; phase<=size; phase++){
         if((id+phase)%2 == 0 && id != size-1){
+            float *my_temp = malloc(right_size * sizeof(float));
             Recv_data(id+1, right_size, my_temp, mpi_comm);
-            Merge(local_size, right_size, local_data, my_temp);
-            Send_data(id+1, right_size, my_temp, mpi_comm);
+            Send_data(id+1, local_size, local_data, mpi_comm);
+            keep_low(local_size, right_size, local_data, my_temp);
+            free(my_temp);
         } 
         if((id+phase)%2 == 1 && id != 0){
+            float *my_temp = malloc(left_size * sizeof(float));
             Send_data(id-1, local_size, local_data, mpi_comm);
-            Recv_data(id-1, local_size, local_data, mpi_comm);
+            Recv_data(id-1, left_size, my_temp, mpi_comm);
+            keep_high(left_size, local_size, my_temp, local_data);
+            free(my_temp);
         }
         MPI_Barrier(mpi_comm);
     }
@@ -108,7 +117,6 @@ int main(int argc, char *argv[]){
     
     // free the data
     free(local_data);
-    free(my_temp);
    
     // Finalize MPI program
     MPI_Finalize();
@@ -166,6 +174,50 @@ int comparator(const void *a, const void *b){
     // So the better way is to compare it first and return the value
     // If *(float *)a > *(float *)b, then it returns 1, else return -1.
     return (*(float *)a > *(float *)b) - (*(float *)a < *(float *)b);
+}
+
+void keep_high(int size_a, int size_b, float *data_a, float *data_b){
+    float *tmp = malloc(sizeof(float)*size_b);
+    // Merge the list with lower order to tmp
+    int idx_a = size_a-1, idx_b = size_b-1, idx_out = size_b-1, i = 0;
+   
+    while(idx_a > 0 && idx_b > 0){
+        if(data_a[idx_a] < data_b[idx_b])
+            tmp[idx_out--] = data_b[idx_b--];
+        else
+	        tmp[idx_out--] = data_a[idx_a--];
+    }
+	
+    while(idx_out > 0)
+        tmp[idx_out--] = (idx_a > 0)? data_a[idx_a--]:data_b[idx_b--];
+
+    // split the data
+    for(i = 0; i < size_b; i++)
+        data_b[i] = tmp[i];
+
+    free(tmp);
+}
+
+void keep_low(int size_a, int size_b, float *data_a, float *data_b){
+    float *tmp = malloc(sizeof(float)*size_a);
+    // Merge the list with lower order to tmp
+    int idx_a = 0, idx_b = 0, idx_out = 0, i = 0;
+   
+    while(idx_a < size_a && idx_b < size_b){
+        if(data_a[idx_a] < data_b[idx_b])
+            tmp[idx_out++] = data_a[idx_a++];
+        else
+	    tmp[idx_out++] = data_b[idx_b++];
+    }
+	
+    while(idx_out < size_a)
+        tmp[idx_out++] = (idx_a < size_a)? data_a[idx_a++]:data_b[idx_b++];
+
+    // split the data
+    for(i = 0; i < size_a; i++)
+        data_a[i] = tmp[i];
+
+    free(tmp);
 }
 
 void Merge(int size_a, int size_b, float *data_a, float *data_b){    
