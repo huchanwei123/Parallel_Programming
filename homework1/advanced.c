@@ -11,6 +11,7 @@
 /************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include "mpi.h"
 
 // function initialization
@@ -21,6 +22,7 @@ void keep_high(int size_a, int size_b, float *data_a, float *data_b);
 void keep_low(int size_a, int size_b, float *data_a, float *data_b);
 void Send_data(int target_id, int local_size, float *local_data, MPI_Comm mpi_comm);
 void Recv_data(int from_id, int recv_size, float *recv_data, MPI_Comm mpi_comm);
+float diff(struct timespec start, struct timespec end);
 
 int main(int argc, char *argv[]){
     // initialization for parameters
@@ -42,6 +44,11 @@ int main(int argc, char *argv[]){
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	
+	// Print out information
+	if(id == 0){
+		printf("Running basic.c!\nN = %d\ntotal processor used: %d\n", N, size); 
+	} 
 
     // if the number of process is larger than N...
     if(N < size){
@@ -74,16 +81,30 @@ int main(int argc, char *argv[]){
     }else{
         local_size = num_per_processor;
     }
+
+    // declaration of time measurement 
+    struct timespec start, end;
+    float IO_time, compute_time, comm_time;
+
     float *local_data = malloc(local_size * sizeof(float));
+    clock_gettime(CLOCK_REALTIME, &start);
     local_data = MPI_Read(mpi_comm, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, file_in, offset, local_size);
-    
+    MPI_Barrier(mpi_comm);
+    clock_gettime(CLOCK_REALTIME, &end);
+    IO_time += diff(start, end);
+
     // Start processor level odd-even sort
     // perform local sort first
+    clock_gettime(CLOCK_REALTIME, &start);
     qsort(local_data, local_size, sizeof(float), comparator);
+    MPI_Barrier(mpi_comm);
+    clock_gettime(CLOCK_REALTIME, &end);
+    compute_time += diff(start, end);
 
     // The last processor should communicate with left processor of theri size, others just num_per_processor
     int right_size = num_per_processor, left_size = num_per_processor;
     
+    clock_gettime(CLOCK_REALTIME, &start);
     if(id == size-1){
 	MPI_Send(&local_size, 1, MPI_INT, id-1, 2, mpi_comm);
         MPI_Recv(&left_size, 1, MPI_INT, id-1, 3, mpi_comm, MPI_STATUS_IGNORE);
@@ -92,28 +113,63 @@ int main(int argc, char *argv[]){
         MPI_Recv(&right_size, 1, MPI_INT, id+1, 2, mpi_comm, MPI_STATUS_IGNORE);
         MPI_Send(&local_size, 1, MPI_INT, id+1, 3, mpi_comm);
     }
+    MPI_Barrier(mpi_comm);
+    clock_gettime(CLOCK_REALTIME, &end);
+    comm_time += diff(start, end);
+
+
     // start merge sort
     int phase = 0;
     for(phase=0; phase<=size; phase++){
         if((id+phase)%2 == 0 && id != size-1){
             float *my_temp = malloc(right_size * sizeof(float));
+
+	    // measure comm time
+	    clock_gettime(CLOCK_REALTIME, &start);
             Recv_data(id+1, right_size, my_temp, mpi_comm);
             Send_data(id+1, local_size, local_data, mpi_comm);
+	    //MPI_Barrier(mpi_comm);
+    	    clock_gettime(CLOCK_REALTIME, &end);
+    	    comm_time += diff(start, end);
+
+	    // measure compute time
+	    clock_gettime(CLOCK_REALTIME, &start);
             keep_low(local_size, right_size, local_data, my_temp);
+	    clock_gettime(CLOCK_REALTIME, &end);
+    	    compute_time += diff(start, end);
+
             free(my_temp);
         }else if((id+phase)%2 == 1 && id != 0){
             float *my_temp = malloc(left_size * sizeof(float));
+
+	    // measure comm time
+	    clock_gettime(CLOCK_REALTIME, &start);
             Send_data(id-1, local_size, local_data, mpi_comm);
             Recv_data(id-1, left_size, my_temp, mpi_comm);
+	    //MPI_Barrier(mpi_comm);
+    	    clock_gettime(CLOCK_REALTIME, &end);
+    	    comm_time += diff(start, end);
+
+	    // measure compute time
+	    clock_gettime(CLOCK_REALTIME, &start);
             keep_high(left_size, local_size, my_temp, local_data);
+	    clock_gettime(CLOCK_REALTIME, &end);
+    	    compute_time += diff(start, end);
+
             free(my_temp);
         }else;
         MPI_Barrier(mpi_comm);
     }
 
     // write the result
+    clock_gettime(CLOCK_REALTIME, &start);
     MPI_Write(mpi_comm, argv[3], MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, file_out, local_data, offset, local_size);
-    
+    clock_gettime(CLOCK_REALTIME, &end);
+    IO_time += diff(start, end);
+
+    if(id==0)
+	printf("I/O time: %f\nCompute time: %f\nComm. time: %f\n", IO_time, compute_time, comm_time);
+
     // free the data
     free(local_data);
    
@@ -217,4 +273,15 @@ void keep_low(int size_a, int size_b, float *data_a, float *data_b){
         data_a[i] = tmp[i];
 
     free(tmp);
+}
+
+float diff(struct timespec start, struct timespec end){
+    // function used to measure time in nano resolution
+    float output;
+    float nano = 1000000000.0;
+    if(end.tv_nsec < start.tv_nsec)
+        output = ((end.tv_sec - start.tv_sec -1)+(nano+end.tv_nsec-start.tv_nsec)/nano);
+    else
+	output = ((end.tv_sec - start.tv_sec)+(end.tv_nsec-start.tv_nsec)/nano);
+    return output;
 }
