@@ -1,6 +1,0 @@
-Running basic.c!
-N = 100000
-total processor used: 12
-I/O time: 0.012172
-Compute time: 2.052291
-Comm. time: 0.427748
