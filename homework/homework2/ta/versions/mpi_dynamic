@@ -1,0 +1,12 @@
+{
+	"abbr": "d",
+	"parallelism": [
+		{"procs": 7, "threads": 1, "preset": 1},
+		{"procs": 11, "threads": 1, "preset": 1},
+		{"procs": 17, "threads": 1, "preset": 2},
+		{"procs": 19, "threads": 1, "preset": 2},
+		{"procs": 23, "threads": 1, "preset": 3},
+		{"procs": 31, "threads": 1, "preset": 3},
+		{"procs": 48, "threads": 1, "preset": 4}
+	]
+}

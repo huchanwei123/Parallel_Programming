@@ -1,0 +1,10 @@
+{
+	"abbr": "t",
+	"parallelism": [
+		{"procs": 1, "threads": 2, "preset": 1},
+		{"procs": 1, "threads": 3, "preset": 1},
+		{"procs": 1, "threads": 5, "preset": 2},
+		{"procs": 1, "threads": 11, "preset": 3},
+		{"procs": 1, "threads": 12, "preset": 4}
+	]
+}

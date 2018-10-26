@@ -1,0 +1,11 @@
+{
+	"abbr": "h",
+	"parallelism": [
+		{"procs": 2, "threads": 2, "preset": 1},
+		{"procs": 2, "threads": 6, "preset": 2},
+		{"procs": 4, "threads": 6, "preset": 3},
+		{"procs": 8, "threads": 3, "preset": 3},
+		{"procs": 8, "threads": 6, "preset": 4},
+		{"procs": 4, "threads": 12, "preset": 4}
+	]
+}
