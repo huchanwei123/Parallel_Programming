@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
                 ++repeats;
             }
             image[j * width + i] = repeats;
+            printf("%d\n", repeats);
         }
     }
 

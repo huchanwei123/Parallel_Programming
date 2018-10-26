@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <png.h>
+#include <mpi.h>
 #include <math.h>
 #include <assert.h>
 
@@ -82,6 +83,18 @@ int main(int argc, char *argv[]){
     double upper = atof(argv[5]);
     int w = atoi(argv[6]), h = atoi(argv[7]);
     const char *out = argv[8];
+
+    // initialize the MPI 
+    MPI_Status status;
+    MPI_Comm mpi_comm = MPI_COMM_WORLD;
+    rc = MPI_Init(&argc, &argv);
+    if(rc != MPI_SUCCESS){
+        printf("Error starting MPI program. Terminating\n");
+        MPI_Abort(mpi_comm, rc);
+    }
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
 #ifdef DEBUG
     printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
