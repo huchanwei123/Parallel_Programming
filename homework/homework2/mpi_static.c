@@ -85,6 +85,7 @@ int main(int argc, char *argv[]){
     const char *out = argv[8];
 
     // initialize the MPI 
+    int rc, id, size;
     MPI_Status status;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
     rc = MPI_Init(&argc, &argv);
@@ -96,6 +97,9 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
+    // decide current processor start from which row
+    int row_per_proc = floor(h/size);
+
 #ifdef DEBUG
     printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
     printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
@@ -104,18 +108,42 @@ int main(int argc, char *argv[]){
     // define complex number C
     CPLX C;
 
+    // find start row and end row
+    int start_row = id*row_per_proc;
+    int end_row;
+    if(id != size-1)
+        end_row = (id+1)*row_per_proc;
+    else
+        end_row = h;
+
     // calculate pixel value
-    int *img = (int *)malloc(w*h*sizeof(int));
+    int *img = (int *)malloc((end_row-start_row)*w*sizeof(int));
     int i, j;
-    for(j = 0; j < h; j++){
+    for(j = start_row; j < end_row; j++){
         C.imag = lower + j * (upper - lower)/h;
         for(i = 0; i < w; i++){
             C.real = left + i * (right - left)/w;
-            img[j*w+i] = cal_pixel(C);
+            img[(j-start_row)*w+i] = cal_pixel(C);
         }
     }
-
-    write_png(out, w, h, img);
+    
+    int p;
+    int *final_img = (int *)malloc(w*h*sizeof(int));
+    if(id != 0){
+        // send to master process
+        MPI_Send(img, (end_row-start_row)*w, MPI_INT, 0, 1, mpi_comm);
+    }else{
+        int recieve_row = row_per_proc;
+        memcpy(final_img, img, row_per_proc*w*sizeof(int));
+        for(p=1;p<size;p++){
+            if(p == size-1)
+                recieve_row = h - p*row_per_proc;
+            MPI_Recv(&(final_img[row_per_proc*p*w]), recieve_row*w, MPI_INT, p, 1, mpi_comm, &status);
+        }
+        write_png(out, w, h, final_img);
+    }
+    MPI_Finalize();
+    free(final_img);
     free(img);
     return 0;
 }

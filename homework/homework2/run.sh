@@ -8,7 +8,11 @@ imag_upper=2
 w=575
 h=575
 output_path="/home/huchanwei123/Desktop/Parallel_Programming/homework/homework2/${file}.png"
-./${file} ${thd_per_proc} ${real_lower} ${real_upper} ${imag_lower} ${imag_upper} \
-    ${w} ${h} ${output_path}
-
+if [ "$file" == "seq" ]; then
+    ./${file} ${thd_per_proc} ${real_lower} ${real_upper} ${imag_lower} ${imag_upper} \
+        ${w} ${h} ${output_path}
+else
+    mpirun -np 4 ./${file} ${thd_per_proc} ${real_lower} ${real_upper} ${imag_lower} ${imag_upper} \
+        ${w} ${h} ${output_path}
+fi
 
