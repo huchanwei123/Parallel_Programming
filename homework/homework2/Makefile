@@ -6,5 +6,5 @@ seq: seq.c
 	 $(CC) seq.c $(CFLAGS) -o seq
 
 mpi_static: mpi_static.c
-	        $(MPICC) mpi_static.c $(CFLAGS) -o mpi_static
+	 $(MPICC) mpi_static.c $(CFLAGS) -o mpi_static
 
