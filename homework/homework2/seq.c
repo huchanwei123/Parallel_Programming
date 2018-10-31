@@ -1,24 +1,12 @@
-/*  Description:                                                    *
- *      The sequential Mandelbort Set code                          *
- *  Author:                                                         *
- *      Chan-Wei Hu                                                 *
- *******************************************************************/
 #define PNG_NO_SETJMP
 
+#include <assert.h>
+#include <png.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <png.h>
-#include <math.h>
-#include <assert.h>
+#include <string.h>
 
 #define MAX_ITER 10000
-
-// define data structure for complex number
-struct complex_num{
-    double real, imag;
-};
-
-typedef struct complex_num CPLX;
 
 void write_png(const char* filename, const int width, const int height, const int* buffer) {
     FILE* fp = fopen(filename, "wb");
@@ -29,7 +17,7 @@ void write_png(const char* filename, const int width, const int height, const in
     assert(info_ptr);
     png_init_io(png_ptr, fp);
     png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
-                             PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     png_write_info(png_ptr, info_ptr);
     size_t row_size = 3 * width * sizeof(png_byte);
     png_bytep row = (png_bytep)malloc(row_size);
@@ -42,7 +30,7 @@ void write_png(const char* filename, const int width, const int height, const in
                 if (p & 16) {
                     color[0] = 240;
                     color[1] = color[2] = p % 16 * 16;
-                }else{
+                } else {
                     color[0] = p % 16 * 16;
                 }
             }
@@ -55,55 +43,45 @@ void write_png(const char* filename, const int width, const int height, const in
     fclose(fp);
 }
 
-int cal_pixel(CPLX C){
-    // calculate pixel value for plotting
-    int count = 0;
-    double len_sq = 0;
-    // start calculate pixel
-    double ori_real = C.real;
-    double ori_imag = C.imag;
-    while(count < MAX_ITER && len_sq < 4.0){
-        double temp = C.real*C.real - C.imag*C.imag + ori_real;
-        C.imag = 2*C.real*C.imag + ori_imag;
-        C.real = temp;
-        len_sq = C.real*C.real + C.imag*C.imag;
-        ++count;
-    }
-    return count;
-}
+int main(int argc, char** argv) {
+    /* argument parsing */
+    assert(argc == 9);
+    int num_threads = strtol(argv[1], 0, 10);
+    double left = strtod(argv[2], 0);
+    double right = strtod(argv[3], 0);
+    double lower = strtod(argv[4], 0);
+    double upper = strtod(argv[5], 0);
+    int width = strtol(argv[6], 0, 10);
+    int height = strtol(argv[7], 0, 10);
+    const char* filename = argv[8];
 
-int main(int argc, char *argv[]){
-    assert(argc==9);
-    // Read in argument 
-    int thd_per_proc = atoi(argv[1]);
-    double left = atof(argv[2]);
-    double right = atof(argv[3]);
-    double lower = atof(argv[4]);
-    double upper = atof(argv[5]);
-    int w = atoi(argv[6]), h = atoi(argv[7]);
-    const char *out = argv[8];
+    /* allocate memory for image */
+    int* image = (int*)malloc(width * height * sizeof(int));
+    assert(image);
 
-#ifdef DEBUG
-    printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
-    printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
-#endif
+    /* mandelbrot set */
+    for (int j = 0; j < height; ++j) {
+        double y0 = j * ((upper - lower) / height) + lower;
+        for (int i = 0; i < width; ++i) {
+            double x0 = i * ((right - left) / width) + left;
 
-    // define complex number C
-    CPLX C;
-
-    // calculate pixel value
-    int *img = (int *)malloc(w*h*sizeof(int));
-    int i, j;
-    for(j = 0; j < h; j++){
-        C.imag = lower + j * (upper - lower)/h;
-        for(i = 0; i < w; i++){
-            C.real = left + i * (right - left)/w;
-            img[j*w+i] = cal_pixel(C);
+            int repeats = 0;
+            double x = 0;
+            double y = 0;
+            double length_squared = 0;
+            while (repeats < MAX_ITER && length_squared < 4) {
+                double temp = x * x - y * y + x0;
+                y = 2 * x * y + y0;
+                x = temp;
+                length_squared = x * x + y * y;
+                ++repeats;
+            }
+            image[j * width + i] = repeats;
+			printf("%d\n", repeats);
         }
     }
 
-    write_png(out, w, h, img);
-    free(img);
-    return 0;
+    /* draw and cleanup */
+    write_png(filename, width, height, image);
+    free(image);
 }
-

@@ -146,7 +146,8 @@ int main(int argc, char *argv[]){
         }
         write_png(out, w, h, final_img);
     }
-    MPI_Finalize();
+    MPI_Barrier(mpi_comm);
+	MPI_Finalize();
     free(final_img);
     free(img);
     return 0;
