@@ -1,5 +1,5 @@
 /*  Description:                                                    *
- *      The sequential Mandelbort Set code                          *
+ *      The Mandelbort Set code using MPI with dynamic scheduling   *
  *  Author:                                                         *
  *      Chan-Wei Hu                                                 *
  *******************************************************************/
@@ -114,11 +114,12 @@ int main(int argc, char *argv[]){
     int count = 0;
     int row = 0;
     int get_row = 0;
+    // allocate memeory for output image and initial to 0
+    int *img = (int *)malloc(h*w*sizeof(int));
+    memset(img, 0, h*w*sizeof(int));
+    assert(img);
+
     if(id == 0){
-        // allocate memeory for output image and initial to 0
-        int *img = (int *)malloc(h*w*sizeof(int));
-        memset(img, 0, h*w*sizeof(int));
-        assert(img);
         // lookup list for send which row to which processor
         int *lookup = (int*)malloc((size-1)*sizeof(int));
         memset(lookup, 0, (size-1)*sizeof(int));
@@ -130,7 +131,7 @@ int main(int argc, char *argv[]){
             row++;
         }
         
-        // while loop for keep recieving result and send data to slave processor
+        // loop for keep recieving result and send data to slave processor
         int *tmp_row = (int *)malloc(w*sizeof(int));
         while(count > 0){
             MPI_Recv(tmp_row, w, MPI_INT, MPI_ANY_SOURCE, RESULT_TAG, mpi_comm, &status);
@@ -139,12 +140,11 @@ int main(int argc, char *argv[]){
 #endif
             count--;
             get_row = lookup[status.MPI_SOURCE-1];
-            //printf("Recieve row: %d\n", get_row);
             memcpy(img+(get_row*w), tmp_row, w*sizeof(int));
             // send another task to slave processor
             if(row<h){
-                //MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
                 lookup[status.MPI_SOURCE-1] = row;
+                MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
 #ifdef DEBUG
                 printf("Master processor send row %d to [%d]\n", row, status.MPI_SOURCE);
 #endif
@@ -152,14 +152,24 @@ int main(int argc, char *argv[]){
                 row++;
             }else{
                 row = h+1;
-                //MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
+                MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
             }
-            MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
+            
+            // master processor should also do calculation...
+            if(row < h){
+                C.imag = lower + row * ((upper-lower)/h);
+                for(int i = 0; i < w; ++i){
+                    C.real = left + i * ((right-left)/w);
+                    tmp_row[i] = cal_pixel(C);
+                }
+                memcpy(img+row*w, tmp_row, w*sizeof(int));
+                row++;
+            }
         }
         free(tmp_row);
-        free(img);
+        free(lookup);
         write_png(out, w, h, img);
-        
+        free(img);
     }else{
         // for slave process
         int row;
@@ -171,7 +181,7 @@ int main(int argc, char *argv[]){
 #ifdef DEBUG
             printf("[%d] Recieve row data: %d\n", id, row);
 #endif
-            if(row == h+1)
+            if(row >= h+1)
                 break;
 
             // start doing mandelbrot set for target row
@@ -183,14 +193,12 @@ int main(int argc, char *argv[]){
 
             // send back the result to master
             MPI_Send(local_result, w, MPI_INT, 0, RESULT_TAG, mpi_comm);
-            printf("[%d] send back result of row %d\n",id, row);
 #ifdef DEBUG
             printf("[%d] Send local_result to master processor\n", id);
 #endif
         }
+        free(local_result);
     }
-
-    //MPI_Barrier(mpi_comm);
 	MPI_Finalize();
     return 0;
 }
