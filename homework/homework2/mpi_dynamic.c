@@ -13,7 +13,10 @@
 #include <assert.h>
 #include <string.h>
 
+// define some parameters
 #define MAX_ITER 10000
+#define DATA_TAG 0
+#define RESULT_TAG 1
 
 // define data structure for complex number
 struct complex_num{
@@ -99,9 +102,6 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
-    // decide current processor start from which row
-    int row_per_proc = floor(h/size);
-
 #ifdef DEBUG
     printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
     printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
@@ -109,46 +109,89 @@ int main(int argc, char *argv[]){
 
     // define complex number C
     CPLX C;
-
-    // find start row and end row
-    int start_row = id*row_per_proc;
-    int end_row;
-    if(id != size-1)
-        end_row = (id+1)*row_per_proc;
-    else
-        end_row = h;
-
-    // calculate pixel value
-    int *img = (int *)malloc((end_row-start_row)*w*sizeof(int));
-	assert(img);
 	
-	/* start mandelbrot sort */
-    for(int j = start_row; j < end_row; ++j){
-        C.imag = lower + j * ((upper - lower) / h);
-        for(int i = 0; i < w; ++i){
-            C.real = left + i * ((right - left) / w);
-			img[(j-start_row)*w+i] = cal_pixel(C);
+    // for master process
+    int count = 0;
+    int row = 0;
+    int get_row = 0;
+    if(id == 0){
+        // allocate memeory for output image and initial to 0
+        int *img = (int *)malloc(h*w*sizeof(int));
+        memset(img, 0, h*w*sizeof(int));
+        assert(img);
+        // lookup list for send which row to which processor
+        int *lookup = (int*)malloc((size-1)*sizeof(int));
+        memset(lookup, 0, (size-1)*sizeof(int));
+        // send initial task to slave process
+        for(int pid=1; pid<size; pid++){
+            MPI_Send(&row, 1, MPI_INT, pid, DATA_TAG, mpi_comm);
+            lookup[pid-1] = row;
+            count++;
+            row++;
         }
-    }
-    
-    int p;
-    int *final_img = (int *)malloc(w*h*sizeof(int));
-    if(id != 0){
-        // send to master process
-        MPI_Send(img, (end_row-start_row)*w, MPI_INT, 0, 1, mpi_comm);
+        
+        // while loop for keep recieving result and send data to slave processor
+        int *tmp_row = (int *)malloc(w*sizeof(int));
+        while(count > 0){
+            MPI_Recv(tmp_row, w, MPI_INT, MPI_ANY_SOURCE, RESULT_TAG, mpi_comm, &status);
+#ifdef DEBUG
+            printf("Master processor recieve data from [%d]\n", status.MPI_SOURCE);
+#endif
+            count--;
+            get_row = lookup[status.MPI_SOURCE-1];
+            //printf("Recieve row: %d\n", get_row);
+            memcpy(img+(get_row*w), tmp_row, w*sizeof(int));
+            // send another task to slave processor
+            if(row<h){
+                //MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
+                lookup[status.MPI_SOURCE-1] = row;
+#ifdef DEBUG
+                printf("Master processor send row %d to [%d]\n", row, status.MPI_SOURCE);
+#endif
+                count++;
+                row++;
+            }else{
+                row = h+1;
+                //MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
+            }
+            MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
+        }
+        free(tmp_row);
+        free(img);
+        write_png(out, w, h, img);
+        
     }else{
-        int recieve_row = row_per_proc;
-        memcpy(final_img, img, row_per_proc*w*sizeof(int));
-        for(p=1;p<size;p++){
-            if(p == size-1)
-                recieve_row = h - p*row_per_proc;
-            MPI_Recv(&(final_img[row_per_proc*p*w]), recieve_row*w, MPI_INT, p, 1, mpi_comm, &status);
+        // for slave process
+        int row;
+        // initialize local result
+        int *local_result = (int*)malloc(w*sizeof(int));
+        
+        while(1){
+            MPI_Recv(&row, 1, MPI_INT, 0, DATA_TAG, mpi_comm, &status);
+#ifdef DEBUG
+            printf("[%d] Recieve row data: %d\n", id, row);
+#endif
+            if(row == h+1)
+                break;
+
+            // start doing mandelbrot set for target row
+            C.imag = lower + row * ((upper-lower)/h);
+            for(int i = 0; i < w; ++i){
+                C.real = left + i * ((right - left) / w);
+                local_result[i] = cal_pixel(C);
+            }
+
+            // send back the result to master
+            MPI_Send(local_result, w, MPI_INT, 0, RESULT_TAG, mpi_comm);
+            printf("[%d] send back result of row %d\n",id, row);
+#ifdef DEBUG
+            printf("[%d] Send local_result to master processor\n", id);
+#endif
         }
-        write_png(out, w, h, final_img);
     }
-    MPI_Finalize();
-    free(final_img);
-    free(img);
+
+    //MPI_Barrier(mpi_comm);
+	MPI_Finalize();
     return 0;
 }
 
