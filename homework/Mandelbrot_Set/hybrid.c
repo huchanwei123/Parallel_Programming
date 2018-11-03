@@ -120,9 +120,8 @@ int main(int argc, char *argv[]){
 	int *img = (int *)malloc(h*w*sizeof(int));
 	memset(img, 0, h*w*sizeof(int));
 	assert(img);
-	
-#pragma omp parallel 
-#pragma omp for schedule(dynamic, thd_per_proc) 
+
+#pragma omp parallel for schedule(dynamic, thd_per_proc) 
 	/* start mandelbrot sort with load balance */
     for(int j = id; j < h; j+=size){
         C.imag = lower + j * ((upper - lower) / h);

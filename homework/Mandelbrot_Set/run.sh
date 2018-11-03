@@ -15,6 +15,7 @@ if [ "$file" == "seq" ]; then
 else
     #mpirun -np 4 ./${file} ${thd_per_proc} ${real_lower} ${real_upper} ${imag_lower} ${imag_upper} \
     srun -c${thd_per_proc} -n${proc} ./${file} ${thd_per_proc} ${real_lower} ${real_upper} ${imag_lower} ${imag_upper} \
-    	${w} ${h} ${output_path}
+		${w} ${h} ${output_path}
+	#gdb --args ./${file} ${thd_per_proc} ${real_lower} ${real_upper} ${imag_lower} ${imag_upper} \
 fi
 

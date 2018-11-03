@@ -1,6 +1,6 @@
 CC = gcc
 MPICC = mpicc
-CFLAGS = -O3 -pthread -lm -lpng -fopenmp #-DDEBUG
+CFLAGS = -O3 -pthread -lm -lpng -fopenmp #-DDEBUG -g
 
 mpi_static: mpi_static.c
 	 $(MPICC) mpi_static.c $(CFLAGS) -o mpi_static

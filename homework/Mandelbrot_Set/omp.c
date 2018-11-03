@@ -98,16 +98,39 @@ int main(int argc, char *argv[]){
 	int *img = (int *)malloc(h*w*sizeof(int));
 	memset(img, 0, h*w*sizeof(int));
 	assert(img);
-
-#pragma omp parallel 	
+	
+	int thre = 10;
+	long long int cnt = 0;
+#pragma omp parallel for schedule(dynamic, thd_per_proc) private(C,cnt) 	
 	/* start mandelbrot sort with load balance */
-	#pragma omp for schedule(dynamic, thd_per_proc)
-    for(int j = 0; j < h; ++j){
+	for(int j = 0; j < h; ++j){
         C.imag = lower + j * ((upper - lower) / h);
-        for(int i = 0; i < w; ++i){
+        // First, sample some pixel and do it
+		for(int i = 0; i < w; i+=3){
+			C.real = left + i * ((right - left) / w);
+			img[j*w+i] = cal_pixel(C);
+			C.real = left + (i+1) * ((right - left) / w);
+			img[j*w+(i+1)] = cal_pixel(C);
+		}
+		
+		// scan for which pixel should be calculate
+		for(int i = 2; i < w; i+=3){
+			for(int idx=thre; idx>0; --idx){
+				cnt += img[j*w+(i-idx)];
+			}			
+			if(i < w-1 && i >= thre && img[j*w+(i+1)] == MAX_ITER && cnt == thre*MAX_ITER){
+				img[j*w+i] = MAX_ITER;
+			}else{
+				C.real = left + i * ((right - left) / w);
+				img[j*w+i] = cal_pixel(C);
+			}
+			cnt = 0;
+		}		
+		// Sequentail version of each row
+		/*for(int i = 0; i < w; ++i){
             C.real = left + i * ((right - left) / w);
 			img[j*w+i] = cal_pixel(C);
-        }
+        }*/
     }
     
     write_png(out, w, h, img);
