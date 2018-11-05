@@ -74,7 +74,6 @@ int cal_pixel(CPLX C){
     return count;
 }
 
-
 int main(int argc, char *argv[]){
     assert(argc==9);
     // Read in argument 
@@ -86,14 +85,9 @@ int main(int argc, char *argv[]){
     int w = strtol(argv[6], 0, 10), h = strtol(argv[7], 0, 10);
     const char *out = argv[8];
 
-#ifdef DEBUG
-    printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
-    printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
-#endif
-
     // define complex number C
     CPLX C;
-    
+   
 	// allocate memory for local image and initialize to 0
 	int *img = (int *)malloc(h*w*sizeof(int));
 	memset(img, 0, h*w*sizeof(int));
@@ -101,7 +95,7 @@ int main(int argc, char *argv[]){
 	
 	int thre = 10;
 	long long int cnt = 0;
-#pragma omp parallel for schedule(dynamic, thd_per_proc) private(C,cnt) 	
+#pragma omp parallel for schedule(dynamic) private(C,cnt) 	
 	/* start mandelbrot sort with load balance */
 	for(int j = 0; j < h; ++j){
         C.imag = lower + j * ((upper - lower) / h);
@@ -126,15 +120,9 @@ int main(int argc, char *argv[]){
 			}
 			cnt = 0;
 		}		
-		// Sequentail version of each row
-		/*for(int i = 0; i < w; ++i){
-            C.real = left + i * ((right - left) / w);
-			img[j*w+i] = cal_pixel(C);
-        }*/
-    }
-    
-    write_png(out, w, h, img);
-    free(img);
+	}
+	write_png(out, w, h, img);
+	free(img);
     return 0;
 }
 

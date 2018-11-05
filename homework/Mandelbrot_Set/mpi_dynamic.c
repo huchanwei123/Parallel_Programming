@@ -78,7 +78,6 @@ int cal_pixel(CPLX C){
     return count;
 }
 
-
 int main(int argc, char *argv[]){
     assert(argc==9);
     // Read in argument 
@@ -103,14 +102,9 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
-#ifdef DEBUG
-    printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
-    printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
-#endif
-
     // define complex number C
     CPLX C;
-	
+
     // for master process
     int count = 0;
     int row = 0;
@@ -126,7 +120,6 @@ int main(int argc, char *argv[]){
 	int *local_result = (int*)malloc(bucket_size*w*sizeof(int));
 	int thre = 10;
 	long long int cnt = 0;
-	
 	if(id == 0){
         // lookup list for send head row to which processor
         int *lookup = (int*)malloc((size-1)*sizeof(int));
@@ -144,9 +137,6 @@ int main(int argc, char *argv[]){
 		while(count > 0){
 			// scan if any slave processor had send something...
             	MPI_Recv(tmp_row, bucket_size*w, MPI_INT, MPI_ANY_SOURCE, RESULT_TAG, mpi_comm, &status);
-#ifdef DEBUG
-            	printf("Master processor recieve data from [%d]\n", status.MPI_SOURCE);
-#endif
             	count--;
             	get_row = lookup[status.MPI_SOURCE-1];
             	memcpy(img+(get_row*w), tmp_row, bucket_size*w*sizeof(int));
@@ -163,39 +153,6 @@ int main(int argc, char *argv[]){
                 	row = h+1;
                 	MPI_Send(&row, 1, MPI_INT, status.MPI_SOURCE, DATA_TAG, mpi_comm);
             	}
-            // master processor should also do calculation...
-			/*
-            if(row < h){
-				//printf("master doing row: %d\n", row);
-				count++;
-                C.imag = lower + row * ((upper-lower)/h);
-                // First, sample some pixel and do it
-				for(int i = 0; i < w; i+=3){
-					C.real = left + i * ((right - left) / w);
-					tmp_row[i] = cal_pixel(C);
-					C.real = left + (i+1) * ((right - left) / w);
-					tmp_row[(i+1)] = cal_pixel(C);
-				}
-		
-				// scan for which pixel should be calculate
-				for(int i = 2; i < w; i+=3){
-					for(int idx=thre; idx>0; --idx){
-						cnt += tmp_row[(i-idx)];
-					}			
-
-					if(i < w-1 && i >= thre && tmp_row[(i+1)] == MAX_ITER && cnt == thre*MAX_ITER){
-						tmp_row[i] = MAX_ITER;
-					}else{
-						C.real = left + i * ((right - left) / w);
-						tmp_row[i] = cal_pixel(C);
-					}
-					cnt = 0;
-				}
-
-                memcpy(img+row*w, tmp_row, w*sizeof(int));
-                row++;
-				count--;
-            }*/
         }
         free(tmp_row);
         free(lookup);
@@ -204,9 +161,6 @@ int main(int argc, char *argv[]){
         // for slave process        
         while(1){
             MPI_Recv(&row, 1, MPI_INT, 0, DATA_TAG, mpi_comm, &status);
-#ifdef DEBUG
-            printf("[%d] Recieve row data: %d\n", id, row);
-#endif
             if(row >= h+1)
                 break;
 
@@ -236,16 +190,9 @@ int main(int argc, char *argv[]){
 					cnt = 0;
 				}
 	
-            	/*for(int i = 0; i < w; ++i){
-                	C.real = left + i * ((right - left) / w);
-                	local_result[(j-row)*w+i] = cal_pixel(C);
-            	}*/
 			}
             // send back the result to master
             MPI_Send(local_result, bucket_size*w, MPI_INT, 0, RESULT_TAG, mpi_comm);
-#ifdef DEBUG
-            printf("[%d] Send local_result to master processor\n", id);
-#endif
         }
     }
 	MPI_Finalize();

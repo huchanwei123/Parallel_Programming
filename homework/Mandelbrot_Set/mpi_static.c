@@ -74,7 +74,6 @@ int cal_pixel(CPLX C){
     return count;
 }
 
-
 int main(int argc, char *argv[]){
     assert(argc==9);
     // Read in argument 
@@ -99,21 +98,8 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
-#ifdef DEBUG
-    printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
-    printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
-#endif
-
     // define complex number C
     CPLX C;
-
-    // define image size in local processor
-	int remain = h % size;
-	int row_in_id = 0;
-	if(id < remain)
-    	row_in_id = floor(h/size)+1;
-	else
-		row_in_id = floor(h/size);
     
 	// allocate memory for local image and initialize to 0
 	int *img = (int *)malloc(h*w*sizeof(int));
@@ -149,14 +135,8 @@ int main(int argc, char *argv[]){
 			}
 			cnt = 0;
 		}
-		
-		/* Original sequentail version
-        for(int i = 0; i < w; ++i){
-            C.real = left + i * ((right - left) / w);
-			img[j*w+i] = cal_pixel(C);
-        }*/
     }
-    
+	    
     if(id != 0){
         MPI_Send(img, h*w, MPI_INT, 0, 1, mpi_comm);
     }else{
@@ -170,9 +150,8 @@ int main(int argc, char *argv[]){
 		free(tmp);
         write_png(out, w, h, img);
     }
-    MPI_Barrier(mpi_comm);
 	MPI_Finalize();
-    free(img);
+	free(img);
     return 0;
 }
 
