@@ -12,6 +12,7 @@
 #include <math.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
 
 #define MAX_ITER 10000
 
@@ -74,6 +75,17 @@ int cal_pixel(CPLX C){
     return count;
 }
 
+float diff(struct timespec start, struct timespec end){
+    // function used to measure time in nano resolution
+    float output;
+    float nano = 1000000000.0;
+    if(end.tv_nsec < start.tv_nsec)
+        output = ((end.tv_sec - start.tv_sec -1)+(nano+end.tv_nsec-start.tv_nsec)/nano);
+    else
+	output = ((end.tv_sec - start.tv_sec)+(end.tv_nsec-start.tv_nsec)/nano);
+    return output;
+}
+
 int main(int argc, char *argv[]){
     assert(argc==9);
     // Read in argument 
@@ -89,8 +101,7 @@ int main(int argc, char *argv[]){
     int rc, id, size;
     MPI_Status status;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
-    MPI_Group old_group;
-	rc = MPI_Init(&argc, &argv);
+    rc = MPI_Init(&argc, &argv);
     if(rc != MPI_SUCCESS){
         printf("Error starting MPI program. Terminating\n");
         MPI_Abort(mpi_comm, rc);
@@ -99,28 +110,25 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
-	// prevent from h<size
-	if(h < size){
-    	// obtain the group of processes in the world comm.
-		MPI_Comm_group(mpi_comm, &old_group);
+#ifdef DEBUG
+    printf("Thread per proc: %d\nReal range: [%f %f]\nImagine range: [%f %f]\n", thd_per_proc, left, right, lower, upper);
+    printf("w: %d\nh: %d\nout path: %s\n", w, h, out);
+#endif
 
-		// Remove unnecessary processes
-		MPI_Group new_group;
-		int ranges[][3] = {{h, size-1, 1}};
-		MPI_Group_range_excl(old_group, 1, ranges, &new_group);
-
-		// Create new comm.
-		MPI_Comm_create(mpi_comm, new_group, &mpi_comm);
-
-		if(mpi_comm == MPI_COMM_NULL){
-			MPI_Finalize();
-			exit(0);
-		}
-		size = h;
-    }
+	printf("[Info] Process num: %d\n",size);
 
     // define complex number C
     CPLX C;
+	struct timespec start, end;
+    float compute_time=0, comm_time=0;
+
+    // define image size in local processor
+	int remain = h % size;
+	int row_in_id = 0;
+	if(id < remain)
+    	row_in_id = floor(h/size)+1;
+	else
+		row_in_id = floor(h/size);
     
 	// allocate memory for local image and initialize to 0
 	int *img = (int *)malloc(h*w*sizeof(int));
@@ -129,7 +137,7 @@ int main(int argc, char *argv[]){
 	
 	// threshold
 	int thre = 10;
-	
+	clock_gettime(CLOCK_REALTIME, &start);
 	/* start mandelbrot sort with load balance */
 	long long int cnt = 0;
     for(int j = id; j < h; j+=size){
@@ -156,7 +164,15 @@ int main(int argc, char *argv[]){
 			}
 			cnt = 0;
 		}
+		
+		/* Original sequentail version
+        for(int i = 0; i < w; ++i){
+            C.real = left + i * ((right - left) / w);
+			img[j*w+i] = cal_pixel(C);
+        }*/
     }
+	clock_gettime(CLOCK_REALTIME, &end);
+	printf("Rank %d takes time: %f\n", id, diff(start,end));
 	    
     if(id != 0){
         MPI_Send(img, h*w, MPI_INT, 0, 1, mpi_comm);
@@ -169,8 +185,11 @@ int main(int argc, char *argv[]){
 			}
         }
 		free(tmp);
+		clock_gettime(CLOCK_REALTIME, &end);
+		printf("Total takes time: %f\n", id, diff(start,end));
         write_png(out, w, h, img);
     }
+    //MPI_Barrier(mpi_comm);
 	MPI_Finalize();
 	free(img);
     return 0;

@@ -90,7 +90,8 @@ int main(int argc, char *argv[]){
     int rc, id, size;
     MPI_Status status;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
-    rc = MPI_Init(&argc, &argv);
+    MPI_Group old_group;
+	rc = MPI_Init(&argc, &argv);
     if(rc != MPI_SUCCESS){
         printf("Error starting MPI program. Terminating\n");
         MPI_Abort(mpi_comm, rc);
@@ -98,6 +99,26 @@ int main(int argc, char *argv[]){
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
+
+	// prevent from h<size
+	if(h < size){
+    	// obtain the group of processes in the world comm.
+		MPI_Comm_group(mpi_comm, &old_group);
+
+		// Remove unnecessary processes
+		MPI_Group new_group;
+		int ranges[][3] = {{h, size-1, 1}};
+		MPI_Group_range_excl(old_group, 1, ranges, &new_group);
+
+		// Create new comm.
+		MPI_Comm_create(mpi_comm, new_group, &mpi_comm);
+
+		if(mpi_comm == MPI_COMM_NULL){
+			MPI_Finalize();
+			exit(0);
+		}
+		size = h;
+    }
 
     // define complex number C
     CPLX C;
@@ -109,7 +130,7 @@ int main(int argc, char *argv[]){
 
 	int thre = 10;
 	long long int cnt = 0;
-#pragma omp parallel for schedule(dynamic) 
+#pragma omp parallel for schedule(dynamic) private(C, cnt) 
 	/* start mandelbrot sort with load balance */
     for(int j = id; j < h; j+=size){
 		C.imag = lower + j * ((upper - lower) / h);
