@@ -1,5 +1,5 @@
 NVFLAGS  := -std=c++11 -O3 -arch=sm_61
-CXXFLAGS := -fopenmp -O3 -w
+CXXFLAGS := -fopenmp -w
 LDFLAGS  := -lm
 MPILIBS  := -I/opt/intel/compilers_and_libraries_2018.2.199/linux/mpi/intel64/include \
 			-L/opt/intel/compilers_and_libraries_2018.2.199/linux/mpi/intel64/lib -lmpi

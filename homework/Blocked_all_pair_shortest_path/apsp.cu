@@ -1,123 +1,173 @@
+/****************************************************************************************
+    All-paired shortest path implementation in CUDA (single GPU version)
+    Optimization:
+        1. Unroll
+        2. shared memory in phase 3
+    Author:
+        Chan-Wei Hu
+******************************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda_runtime.h>
 #include <assert.h>
 #include <math.h>
+#include <omp.h>
 
 #define inf 1e9
+static int block_dim = 32;
 
-__global__ void update(int *adj_mat_d, int Xstart, int Ystart, int round, int B, int comp_V){
-    int k;
-    int i = B * Xstart + blockIdx.x * blockDim.x + threadIdx.x;
-    int j = B * Ystart + blockIdx.y * blockDim.y + threadIdx.y;
-    //if(blockIdx.x >= 11) printf("block id = %d\n", blockIdx.x);
-    for(int offset = 0; offset < B; offset++){
-        k = round*B+offset;
-        if(adj_mat_d[i*comp_V+j] > adj_mat_d[i*comp_V+k] + adj_mat_d[k*comp_V+j]){
-            adj_mat_d[i*comp_V+j] = adj_mat_d[i*comp_V+k] + adj_mat_d[k*comp_V+j];
+// phase 1 kernel (done!!)
+__global__ void Phase_1(int *adj_mat_d, int round, int block_dim, int comp_V) {
+    
+	int i = threadIdx.y, 
+        j = threadIdx.x,
+        offset = block_dim * round;
+    
+    extern __shared__ int shared_mem[];
+
+	shared_mem[i * block_dim + j] = adj_mat_d[(i + offset) * comp_V + (j + offset)];
+	__syncthreads();
+
+    #pragma unroll
+	for(int k = 0; k < block_dim; k++){
+        if (shared_mem[i * block_dim + j] > shared_mem[i * block_dim + k] + shared_mem[k * block_dim + j]){
+            shared_mem[i * block_dim + j] = shared_mem[i * block_dim + k] + shared_mem[k * block_dim + j];
         }
-    }
+        __syncthreads();
+	}
+	adj_mat_d[(i + offset) * comp_V + (j + offset)] = shared_mem[i * block_dim + j];
+    __syncthreads();
+}
+
+// phase 2 kernel (done !!!)
+__global__ void Phase_2(int* adj_mat_d, int round, int block_dim, int comp_V) {
+	
+    int total_round = comp_V/block_dim;
+
+    int i = threadIdx.y,
+        j = threadIdx.x,
+        // column or row?
+        i_off = blockIdx.x == 1? block_dim * ((blockIdx.y + round + 1) % total_round): block_dim * round,
+        j_off = blockIdx.x == 1? block_dim * round : block_dim * ((blockIdx.y + round + 1) % total_round);
+	
+    extern __shared__ int shared_mem[];
+	
+    shared_mem[i * block_dim + j] = adj_mat_d[(i + i_off) * comp_V + (j+j_off)];
+	shared_mem[(i + block_dim) * block_dim + j] = adj_mat_d[(i + i_off) * comp_V + j + round*block_dim];
+	shared_mem[(i + 2*block_dim) * block_dim + j] = adj_mat_d[(i + round * block_dim) * comp_V + (j + j_off)];
+	__syncthreads();
+
+    #pragma unroll
+	for (int k = 0; k < block_dim; k++) {
+		if (shared_mem[i * block_dim + j] > shared_mem[(i + block_dim) * block_dim + k] + shared_mem[(k + 2*block_dim) * block_dim + j]) {
+            shared_mem[i * block_dim + j] = shared_mem[(i + block_dim) * block_dim + k] + shared_mem[(k + 2*block_dim) * block_dim + j]; 
+            
+            if (round == i_off/block_dim) 
+                shared_mem[(i + 2*block_dim) * block_dim + j] = shared_mem[i * block_dim + j];
+            if (round == j_off/block_dim) 
+                shared_mem[(i + block_dim) * block_dim + j] = shared_mem[i * block_dim + j];
+		}	
+	}
+	adj_mat_d[(i + i_off) * comp_V + (j+j_off)] = shared_mem[i * block_dim + j];
+	__syncthreads();
+}
+
+// Phase 3 kernel (done !!!)
+__global__ void Phase_3(int* adj_mat_d, int round, int block_dim, int comp_V){
+
+    int i = threadIdx.y,
+        j = threadIdx.x,
+        i_off = block_dim * blockIdx.x,
+        j_off = block_dim * blockIdx.y;
+
+     
+	extern __shared__ int shared_mem[];
+
+	shared_mem[i * block_dim + j] = adj_mat_d[(i + i_off) * comp_V + (j+j_off)];
+	shared_mem[(i + block_dim) * block_dim + j] = adj_mat_d[(i + i_off) * comp_V + j + round*block_dim];
+	shared_mem[(i + 2*block_dim) * block_dim + j] = adj_mat_d[(i + round * block_dim) * comp_V + (j + j_off)];
+    __syncthreads();
+	
+    #pragma unroll
+	for (int k = 0; k < block_dim; k++) {
+		if (shared_mem[i * block_dim + j] > shared_mem[(i + block_dim) * block_dim + k] + shared_mem[(k + 2*block_dim) * block_dim + j])
+            shared_mem[i * block_dim + j] = shared_mem[(i + block_dim) * block_dim + k] + shared_mem[(k + 2*block_dim) * block_dim + j];
+	}
+	
+	adj_mat_d[(i + i_off) * comp_V + (j+j_off)] = shared_mem[i * block_dim + j];
+	__syncthreads();
 }
 
 int main(int argc, char *argv[]){
-    /******************************* load data *********************************/
+	/******************************* load data *********************************/
     // only two arguments are allowed
     assert(argc == 3);
 
-    // open input file
-    int E, comp_V, V;
+    int E, V;
     FILE *in_fp;
     in_fp = fopen(argv[1], "r");
     if(in_fp == NULL) printf("Failed on opening file\n");
-
     // read in data
     fread(&V, sizeof(int), 1, in_fp);
     fread(&E, sizeof(int), 1, in_fp);
-    printf("Total vertices: %d\nTotal edges: %d\n", V, E);
 
-    // start dividing data
-    // block size
-    int B = 16;
-    printf("Block size B = %d\n", B);
+    // compensate V to make V % block_dim == 0
+	int comp_V = V + (block_dim - ((V-1) % block_dim + 1));
 
-    // check if V % B == 0
-    int V_block = V % B ? V/B+1 : V/B;
-    comp_V = B*V_block+1;
-    // create adjacency matrix for new graph
-    int *adj_mat = (int*)malloc(comp_V*comp_V*sizeof(int));
-    for(int i = 0; i < comp_V; i++){
+	//allocate memory
+    int *adj_mat; 
+    size_t sz = comp_V * comp_V * sizeof(int);
+	cudaMallocHost((void**) &adj_mat, sz);
+	for(int i = 0; i < comp_V; i++){
         for(int j = 0; j < comp_V; j++){
             if(i == j) adj_mat[i*comp_V+j] = 0;
             else adj_mat[i*comp_V+j] = inf;
         }
     }
-    
     // load data to graph
     int src, dst, w;
     while(E--){
         fread(&src, sizeof(int), 1, in_fp);
         fread(&dst, sizeof(int), 1, in_fp);
         fread(&w, sizeof(int), 1, in_fp);
-        if(adj_mat[src*comp_V+dst] > w) adj_mat[src*comp_V+dst] = w;
+        adj_mat[src*comp_V+dst] = w;
     }
     fclose(in_fp);
     /****************************************************************************/
-    
-    /****************************** Device info. ********************************/
-    // only single GPU is used, so the device index is 0
-    // print out the information of GPU
-    int device_idx = 0;
-    /*
-    cudaDeviceProp deviceProp;
-    cudaError_t cudaError;
-    cudaError = cudaGetDeviceProperties(&deviceProp, device_idx);
-    printf("Device max threads per block : %d\n", deviceProp.maxThreadsPerBlock);
-    printf("Max thread dim: (%d, %d, %d)\n", deviceProp.maxThreadsDim[0], deviceProp.maxThreadsDim[1], deviceProp.maxThreadsDim[2]);
-    */
-    cudaSetDevice(device_idx);
-    /****************************************************************************/
-    // block size
-    int round = ceil((float)V/B);
-    int block_dim = 8;
-    int grid_size = B/block_dim;
-    //int gridFactor = 1;
-    //int gridFactor = (1024/B)*(1024/B);
-    //int gridFactor = B*B;
-    printf("Will run %d rounds\n", round);
 
-    dim3 blocks(grid_size, grid_size);
-    dim3 threads(block_dim, block_dim);
-    dim3 Col_Other(grid_size*round, grid_size);
-    dim3 Row_Other(grid_size, grid_size*round);
-
-    // malloc for cuda memory 
+	int round =  ceil((float) comp_V/block_dim);
     int *adj_mat_d;
-    cudaMalloc((void**) &adj_mat_d, comp_V*comp_V*sizeof(int));
-    cudaMemcpy(adj_mat_d, adj_mat, comp_V*comp_V*sizeof(int), cudaMemcpyHostToDevice);
 
-    // start iteration
-    for(int r = 0; r < round; r++){
-        /********************** phase 1 ***********************/
-        update <<<blocks, threads>>> (adj_mat_d, r, r, r, B, comp_V);
+    // 2D block
+    dim3 threads(block_dim, block_dim);
+	
+	dim3 p1(1, 1);
+	dim3 p2(2, round-1);
+    dim3 p3(round, round);
+    
+    //size_t sz = comp_V * comp_V * sizeof(int);
 
-        /********************** phase 2 ***********************/
-        // column part
-        update <<<Col_Other, threads>>> (adj_mat_d, 0, r, r, B, comp_V);
-        // row part 
-        update <<<Row_Other, threads>>> (adj_mat_d, r, 0, r, B, comp_V);
-        
-        /********************** phase 3 ************************/
-        for(int i = 0; i < round; i++){
-            update <<<Row_Other, threads>>> (adj_mat_d, i, 0, r, B, comp_V);
-        }
-    }
-    cudaDeviceSynchronize();
-    // copy result back to host
-    cudaMemcpy(adj_mat, adj_mat_d, comp_V*comp_V*sizeof(int), cudaMemcpyDeviceToHost);
-    // free memory
-    cudaFree(adj_mat_d);
+    cudaSetDevice(0);
+    // Malloc memory
+    cudaMalloc((void**) &adj_mat_d, sz);
+    cudaMemcpy(adj_mat_d, adj_mat, sz, cudaMemcpyHostToDevice);
 
-    // output the result
+    for(int r = 0; r < round; r++){    
+		Phase_1 <<<p1, threads, sizeof(int)*block_dim*block_dim >>>(adj_mat_d, r, block_dim, comp_V);
+            
+   //     cudaDeviceSynchronize();
+			
+        Phase_2 <<<p2, threads, sizeof(int)*3*block_dim*block_dim >>>(adj_mat_d, r, block_dim, comp_V);
+			
+   //     cudaDeviceSynchronize();
+			
+        Phase_3 <<<p3, threads, sizeof(int)*3*block_dim*block_dim >>>(adj_mat_d, r, block_dim, comp_V);
+	}
+	
+	// copy back to host
+    cudaMemcpy(adj_mat, adj_mat_d, sz, cudaMemcpyDeviceToHost);
+
+	// output
     FILE *out_fp;
     out_fp = fopen(argv[2], "wb");
     for(int i = 0; i < V; i++){
@@ -126,8 +176,9 @@ int main(int argc, char *argv[]){
         }   
     }   
     fclose(out_fp);
+
+	//free memory
+	cudaFree(adj_mat_d);
     cudaFreeHost(adj_mat);
-
-    return 0;
+	return 0;
 }
-
