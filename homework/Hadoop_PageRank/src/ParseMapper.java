@@ -1,23 +1,13 @@
 package pageRank;
+
 import java.io.IOException;
 import java.util.StringTokenizer;
-
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
-
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-//import org.apache.hadoop.fs.FileSystem;
-//import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Mapper;
-//import org.apache.hadoop.conf.Configuration;
-
-//import java.util.ArrayList;
-//import java.util.Arrays;
-//import java.net.URI; 
-//import java.io.*;
 
 import pageRank.pageRank;
 
@@ -47,9 +37,8 @@ public class ParseMapper extends Mapper<LongWritable, Text, Text, Text> {
 				context.write(new Text(title), new Text(link));
 			}
 			// handling dangling link
-			if (linked == false){
-				context.write(new Text(title), new Text("Pure Dangling"));
-			}
+			if (linked == false)
+				context.write(new Text(title), new Text(""));
 		}
 	}
 	

@@ -9,52 +9,53 @@ import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.io.Text;
 
 public class SortPair implements WritableComparable{
-	private Text word;
-	private double pagerank;
+	private Text title = new Text();
+	private double pr = 0.0;
 
 	public SortPair() {
-		word = new Text();
-		pagerank = 0.0;
+		title = new Text();
+		pr = 0.0;
 	}
 
-	public SortPair(Text word, double pagerank) {
-		this.word = word;
-		this.pagerank = pagerank;
-	}
-
-	@Override
-	public void write(DataOutput out) throws IOException {
-		word.write(out);
-		out.writeDouble(this.pagerank);
+	public SortPair(Text title, double pr) {
+		this.title = title;
+		this.pr = pr;
 	}
 
 	@Override
-	public void readFields(DataInput in) throws IOException {
-		this.word.readFields(in);
-		this.pagerank = in.readDouble();
+	public void write(DataOutput out) throws IOException{
+		title.write(out);
+		out.writeDouble(this.pr);
 	}
 
-	public Text getWord() {
-		return word;
+	@Override
+	public void readFields(DataInput in) throws IOException{
+		this.title.readFields(in);
+		this.pr = in.readDouble();
 	}
 
-	public double getPageRank() {
-		return pagerank;
+	public Text getTitle() {
+		return title;
+	}
+
+	public double getPR() {
+		return pr;
 	}
 
 	@Override
 	public int compareTo(Object o) {
 
-		double thisPageRank = this.getPageRank();
-		double thatPageRank = ((SortPair)o).getPageRank();
+		double thisPR = this.getPR();
+		double thatPR = ((SortPair)o).getPR();
 
-		Text thisWord = this.getWord();
-		Text thatWord = ((SortPair)o).getWord();
+		Text thisTitle = this.getTitle();
+		Text thatTitle = ((SortPair)o).getTitle();
 
-		// Compare between two objects
-		// First order by pagerank, and then sort them lexicographically in ascending order
-		if( thisPageRank < thatPageRank ) return 1;
-		else if( thisPageRank > thatPageRank ) return -1;
-		else return thisWord.toString().compareTo(thatWord.toString());
+		if(thisPR < thatPR) 
+			return 1;
+		else if(thisPR > thatPR) 
+			return -1;
+		else 
+			return thisTitle.toString().compareTo(thatTitle.toString());
 	}
 } 

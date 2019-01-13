@@ -12,3 +12,5 @@ make
 rm pagerank_${DATA_SIZE}.out
 ./execute.sh ${DATA_SIZE} 1
 
+# judge the result
+hw5-judge ${DATA_SIZE} 1 pagerank_${DATA_SIZE}.out

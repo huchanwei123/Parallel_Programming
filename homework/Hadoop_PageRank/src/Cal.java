@@ -7,21 +7,20 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskCounter;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
-//import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.KeyValueTextInputFormat;
 import java.io.IOException;
 
 import pageRank.pageRank;
-import pageRank.CalcMapper;
-import pageRank.CalcReduce;
+import pageRank.CalMapper;
+import pageRank.CalReducer;
 
 public class Cal{
 
-	public static enum counterTypes {
-        ERROR,
-        DANGLINGSUM
+	public static enum Record{
+        error,
+        dan_sum
     }
 
 	public double Cal(String in_path, String out_path, long PageNum, long DanglingNum) throws Exception {
@@ -36,8 +35,8 @@ public class Cal{
         job.setJarByClass(pageRank.class);
         
 		// set Mapper and Reducer class
-        job.setMapperClass(CalcMapper.class);
-        job.setReducerClass(CalcReduce.class);
+        job.setMapperClass(CalMapper.class);
+        job.setReducerClass(CalReducer.class);
         
         // set the output class of Mapper
         job.setMapOutputKeyClass(Text.class);
@@ -57,9 +56,9 @@ public class Cal{
 
         if(!job.waitForCompletion(true)) throw new Exception("Calculation failed");
 
-        long counterError = job.getCounters().findCounter(Cal.counterTypes.ERROR).getValue();
-        double sumError = ( (double) counterError / CalcReduce.SCALING );
+        long err_get = job.getCounters().findCounter(Cal.Record.error).getValue();
+        double err = ((double) err_get/1E14);
 
-	    return sumError;
+	    return err;
     }
 }

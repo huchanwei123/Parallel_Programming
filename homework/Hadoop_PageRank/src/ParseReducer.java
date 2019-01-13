@@ -1,7 +1,6 @@
 package pageRank;
 
 import java.io.IOException;
-
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.LongWritable;
@@ -20,28 +19,23 @@ public class ParseReducer extends Reducer<Text, Text, Text, Text>{
 
     public void reduce(Text key, Iterable<Text> value, Context context) throws IOException, InterruptedException {
 		StringBuilder builder = new StringBuilder();
-		for (Text val: value) {
-			System.out.println(val.toString());
-			if(key.toString().charAt(0) == ' ') {
+		for(Text val: value){
+			if(key.toString().charAt(0) == ' '){
 				hs.add(val.toString());
-			}
-			else {
-				if( hs.contains(val.toString()) ) {
-					builder.append( "|" + val.toString() );
-				}
+			}else{
+				if(hs.contains(val.toString()))
+					builder.append( "|" + val.toString());
 			}
 		}
-		if(key.toString().charAt(0) != ' ') {
-			Text write_out = new Text( String.valueOf( ((double)1)/(hs.size())) + builder.toString() );
+		if(key.toString().charAt(0) != ' '){
+			Text write_out = new Text(String.valueOf(((double)1)/(hs.size())) + builder.toString());
 			
 			context.write(key, write_out);
 			// dangling 
-			if(!builder.toString().contains("|")) count++;
+			if(!builder.toString().contains("|")) 
+				context.getCounter(counterNums.Dangling).increment(1);
+				//count++;
 		}
-	}
-
-	protected void cleanup(Context context) throws IOException, InterruptedException {
-		System.out.println("count: " + count);
-		context.getCounter(counterNums.Dangling).setValue(count);
+		//context.getCounter(counterNums.Dangling).setValue(count);
 	}
 }
