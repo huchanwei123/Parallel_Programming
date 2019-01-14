@@ -17,12 +17,6 @@ import pageRank.CalMapper;
 import pageRank.CalReducer;
 
 public class Cal{
-
-	public static enum Record{
-        error,
-        dan_sum
-    }
-
 	public double Cal(String in_path, String out_path, long PageNum, long DanglingNum) throws Exception {
         
 		Configuration conf = new Configuration();
@@ -56,7 +50,7 @@ public class Cal{
 
         if(!job.waitForCompletion(true)) throw new Exception("Calculation failed");
 
-        long err_get = job.getCounters().findCounter(Cal.Record.error).getValue();
+		long err_get = job.getCounters().findCounter(Record.error).getValue();
         double err = ((double) err_get/1E14);
 
 	    return err;

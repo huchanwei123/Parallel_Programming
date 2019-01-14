@@ -13,7 +13,6 @@ import pageRank.Cal;
 
 public class CalReducer extends Reducer<Text, Text, Text, Text> {
 	public static final Double damping_ratio = pageRank.damping_ratio;
-    public static final Double scaling = 1E14;
 	public static double ErrorSum = 0.0;
     Double DanglingSum;
     Long ScaledDanglingSum;
@@ -27,8 +26,8 @@ public class CalReducer extends Reducer<Text, Text, Text, Text> {
         
         Cluster cluster = new Cluster(conf);
         Job currentJob = cluster.getJob(context.getJobID());
-        ScaledDanglingSum = currentJob.getCounters().findCounter(Cal.Record.dan_sum).getValue(); 
-        DanglingSum = ScaledDanglingSum / 1E15;
+        ScaledDanglingSum = currentJob.getCounters().findCounter(Record.dan_sum).getValue();
+		DanglingSum = ScaledDanglingSum / 1E15;
     }
 
     @Override
@@ -74,7 +73,7 @@ public class CalReducer extends Reducer<Text, Text, Text, Text> {
             context.write(page, new Text(newPR.toString() + "|" + outLinksString));
         
 		scaled_err = (long) (ErrorSum * 1E14);
-		context.getCounter(Cal.Record.dan_sum).setValue(0L);
-        context.getCounter(Cal.Record.error).setValue(scaled_err);
+		context.getCounter(Record.dan_sum).setValue(0L);
+		context.getCounter(Record.error).setValue(scaled_err);
 	}
 }

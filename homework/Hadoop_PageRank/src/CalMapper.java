@@ -65,6 +65,6 @@ public class CalMapper extends Mapper<Text, Text, Text, Text> {
 
         context.write(new Text(curPage_title), new Text("###" + value.toString()));
     	Long ScaledDtv = (long) (Dangling_total_val * 1E15);
-		context.getCounter(Cal.Record.dan_sum).setValue(ScaledDtv);
+		context.getCounter(Record.dan_sum).setValue(ScaledDtv);
 	}
 }
